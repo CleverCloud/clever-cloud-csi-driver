@@ -48,8 +48,8 @@ spec:
         - --driver-name=rbd.csi.ceph.com
         - --cluster-id=${OVD_CLUSTER_ID}
         - --organisation-id=${OVD_CSI_ORGANISATION_ID}
-        - --axo-url=https://api.clever-cloud.com
-        - --axo-token-file=/etc/clever-csi/token
+        - --backend-url=https://api.clever-cloud.com
+        - --backend-token-file=/etc/clever-csi/token
         - --health-address=0.0.0.0:9808
         securityContext:
           allowPrivilegeEscalation: false
@@ -110,7 +110,7 @@ spec:
         emptyDir: {}
       - name: token
         secret:
-          secretName: clever-csi-axo
+          secretName: clever-csi-backend
           defaultMode: 288
           items:
           - key: token

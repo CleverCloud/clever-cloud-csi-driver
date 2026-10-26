@@ -268,7 +268,7 @@ pub(super) fn parse_mountinfo(bytes: &[u8]) -> Result<Vec<Mount>, Status> {
 
 /// Verify the actual Linux bus/driver ancestry rather than guessing transport
 /// from /dev names. Serial collisions on boot NVMe, SATA or virtio-blk disks do
-/// not make those disks valid Axo virtio-scsi attachments.
+/// not make those disks valid backend virtio-scsi attachments.
 async fn require_virtio_scsi(root: &Path) -> Result<(), Status> {
     let device = tokio::fs::canonicalize(root.join("device"))
         .await

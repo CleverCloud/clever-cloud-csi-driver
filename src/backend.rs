@@ -1,6 +1,6 @@
-//! Client for the historical, cluster-scoped wire API in docs/axo-api-v1.md.
-//! This is not the future REST proposal in docs/axo-api.md.
-//! The API is not present in the existing Axo repository. No Ceph or hypervisor
+//! Client for the historical, cluster-scoped wire API in docs/backend-api-v1.md.
+//! This is not the future REST proposal in docs/backend-api.md.
+//! The backend does not implement this API yet. No Ceph or hypervisor
 //! credential, journal interpretation, lock breaking, or fencing belongs here.
 
 use std::{collections::BTreeMap, path::PathBuf, time::Duration};
@@ -32,7 +32,7 @@ pub const REQUIRED_FEATURES: &[&str] = &[
 
 #[derive(Clone)]
 pub struct ControllerConfig {
-    pub axo_url: String,
+    pub backend_url: String,
     pub organisation_id: String,
     pub cluster_id: String,
     pub token_file: PathBuf,
@@ -42,7 +42,7 @@ pub struct ControllerConfig {
 }
 
 #[derive(Clone)]
-pub struct AxoClient {
+pub struct BackendClient {
     client: reqwest::Client,
     root: Url,
     token_file: PathBuf,
@@ -107,11 +107,11 @@ pub struct VolumeId {
 pub struct EnsureAttachment {
     pub volume_id: String,
     /// Exact VM incarnation on the new path. A historical Kubernetes node name
-    /// is permitted only when Axo authoritatively classifies it as legacy-krbd;
+    /// is permitted only when the backend authoritatively classifies it as legacy-krbd;
     /// it must never be resolved into a QEMU attachment target.
     pub node_id: String,
     pub readonly: bool,
-    /// Axo must classify the target authoritatively and enforce this allowlist
+    /// The backend must classify the target authoritatively and enforce this allowlist
     /// atomically before any attachment side effect. Never infer from node_id.
     pub allowed_transports: Vec<AttachmentTransport>,
     #[serde(flatten)]
@@ -142,7 +142,7 @@ pub enum AttachmentRecord {
         volume_id: String,
         node_id: String,
         /// Exact scsi-hd/virtio-scsi serial, ASCII [A-Za-z0-9_-]{1,36}: the
-        /// Supernova hot-plug volume id, which refuses any other character.
+        /// hypervisor hot-plug volume id, which refuses any other character.
         device_serial: String,
         readonly: bool,
         #[serde(flatten)]
@@ -202,11 +202,11 @@ struct Capabilities {
     features: Vec<String>,
 }
 
-impl AxoClient {
+impl BackendClient {
     pub fn new(config: ControllerConfig) -> Result<Self, Status> {
         if config.timeout.is_zero() || config.timeout > Duration::from_secs(600) {
             return Err(Status::invalid_argument(
-                "Axo timeout must be between 1ns and 600s",
+                "backend timeout must be between 1ns and 600s",
             ));
         }
         for value in [&config.organisation_id, &config.cluster_id] {
@@ -228,11 +228,11 @@ impl AxoClient {
                 "token_file must be an absolute path",
             ));
         }
-        let mut root =
-            Url::parse(&config.axo_url).map_err(|_| Status::invalid_argument("invalid Axo URL"))?;
+        let mut root = Url::parse(&config.backend_url)
+            .map_err(|_| Status::invalid_argument("invalid backend URL"))?;
         if !(root.scheme() == "https" || (config.allow_http && root.scheme() == "http")) {
             return Err(Status::invalid_argument(
-                "Axo requires HTTPS; HTTP requires explicit development opt-in",
+                "backend requires HTTPS; HTTP requires explicit development opt-in",
             ));
         }
         if root.host_str().is_none()
@@ -243,7 +243,7 @@ impl AxoClient {
             || root.path() != "/"
         {
             return Err(Status::invalid_argument(
-                "Axo URL must be an origin without credentials, path, query or fragment",
+                "backend URL must be an origin without credentials, path, query or fragment",
             ));
         }
         root.set_path(&format!(
@@ -256,7 +256,7 @@ impl AxoClient {
             .connect_timeout(config.timeout.min(Duration::from_secs(10)))
             .timeout(config.timeout)
             .build()
-            .map_err(|_| Status::internal("could not initialize Axo HTTP client"))?;
+            .map_err(|_| Status::internal("could not initialize backend HTTP client"))?;
         Ok(Self {
             client,
             root,
@@ -282,17 +282,17 @@ impl AxoClient {
             tracing::warn!(
                 operation = "capabilities",
                 reason = "incompatible_contract",
-                "Axo readiness failed"
+                "backend readiness failed"
             );
             return Err(Status::failed_precondition(
-                "Axo does not implement the required CSI contract",
+                "backend does not implement the required CSI contract",
             ));
         }
         Ok(())
     }
 
     /// A mutation is sent once. On an ambiguous timeout the CO retries its CSI
-    /// operation; Axo reconciles durable resource state using this same key.
+    /// operation; the backend reconciles durable resource state using this same key.
     pub async fn json<B: Serialize + ?Sized, R: DeserializeOwned>(
         &self,
         method: Method,
@@ -339,13 +339,13 @@ impl AxoClient {
             // does not require restarting the controller. Never display its contents.
             let metadata = tokio::fs::metadata(&self.token_file)
                 .await
-                .map_err(|_| Status::unauthenticated("cannot read Axo token file"))?;
+                .map_err(|_| Status::unauthenticated("cannot read backend token file"))?;
             if !metadata.is_file() || metadata.len() > MAX_TOKEN_BYTES {
-                return Err(Status::unauthenticated("invalid Axo token file"));
+                return Err(Status::unauthenticated("invalid backend token file"));
             }
             let token = tokio::fs::read_to_string(&self.token_file)
                 .await
-                .map_err(|_| Status::unauthenticated("cannot read Axo token file"))?;
+                .map_err(|_| Status::unauthenticated("cannot read backend token file"))?;
             let token = token.trim();
             if token.is_empty()
                 || token.len() as u64 > MAX_TOKEN_BYTES
@@ -353,10 +353,10 @@ impl AxoClient {
                     .bytes()
                     .any(|b| b.is_ascii_whitespace() || b.is_ascii_control())
             {
-                return Err(Status::unauthenticated("invalid Axo token file"));
+                return Err(Status::unauthenticated("invalid backend token file"));
             }
             let mut authorization = header::HeaderValue::from_str(&format!("Bearer {token}"))
-                .map_err(|_| Status::unauthenticated("invalid Axo token file"))?;
+                .map_err(|_| Status::unauthenticated("invalid backend token file"))?;
             authorization.set_sensitive(true);
             let url = self
                 .root
@@ -397,21 +397,25 @@ impl AxoClient {
                 tracing::warn!(
                     operation = safe_operation(path),
                     http_status = status.as_u16(),
-                    "Axo HTTP operation failed"
+                    "backend HTTP operation failed"
                 );
                 return Err(api_error(status, &bytes));
             }
             // Asynchronous acceptance is not success: CSI must not report an
-            // attachment ready before Axo observes its completed postconditions.
+            // attachment ready before the backend observes its completed postconditions.
             if status == StatusCode::ACCEPTED {
-                return Err(Status::aborted("Axo operation is still in progress"));
+                return Err(Status::aborted("backend operation is still in progress"));
             }
             Ok(bytes)
         })
         .await
-        .unwrap_or_else(|_| Err(Status::deadline_exceeded("Axo request deadline exceeded")));
+        .unwrap_or_else(|_| {
+            Err(Status::deadline_exceeded(
+                "backend request deadline exceeded",
+            ))
+        });
         if let Err(error) = &result {
-            tracing::warn!(operation = safe_operation(path), grpc_code = ?error.code(), mutation = identity.is_some(), "Axo request failed");
+            tracing::warn!(operation = safe_operation(path), grpc_code = ?error.code(), mutation = identity.is_some(), "backend request failed");
         }
         result
     }
@@ -433,9 +437,9 @@ fn response_error(operation: &str, mutation: bool) -> Status {
         tracing::warn!(
             operation = safe_operation(operation),
             reason = "invalid_response",
-            "Invalid Axo response"
+            "Invalid backend response"
         );
-        Status::data_loss("invalid response from Axo")
+        Status::data_loss("invalid response from the backend")
     }
 }
 
@@ -447,9 +451,9 @@ pub(crate) fn invalid_mutation_response(operation: &str) -> Status {
         operation = safe_operation(operation),
         reason = "invalid_mutation_response",
         outcome = "unknown",
-        "Axo mutation requires reconciliation"
+        "backend mutation requires reconciliation"
     );
-    Status::unavailable("Axo mutation response is invalid; retry to reconcile its outcome")
+    Status::unavailable("backend mutation response is invalid; retry to reconcile its outcome")
 }
 
 fn idempotency_key(scope: &str, operation: &str, identity: &[&str]) -> String {
@@ -466,9 +470,9 @@ fn idempotency_key(scope: &str, operation: &str, identity: &[&str]) -> String {
 
 fn http_error(error: reqwest::Error) -> Status {
     if error.is_timeout() {
-        Status::deadline_exceeded("Axo request deadline exceeded")
+        Status::deadline_exceeded("backend request deadline exceeded")
     } else {
-        Status::unavailable("Axo transport unavailable")
+        Status::unavailable("backend transport unavailable")
     }
 }
 
@@ -478,50 +482,50 @@ fn api_error(status: StatusCode, bytes: &[u8]) -> Status {
     let value: serde_json::Value = serde_json::from_slice(bytes).unwrap_or_default();
     let code = value.get("code").and_then(|v| v.as_str()).unwrap_or("");
     match status {
-        StatusCode::UNAUTHORIZED => Status::unauthenticated("Axo authentication failed"),
+        StatusCode::UNAUTHORIZED => Status::unauthenticated("backend authentication failed"),
         StatusCode::FORBIDDEN => {
-            Status::permission_denied("Axo operation not permitted for this cluster")
+            Status::permission_denied("backend operation not permitted for this cluster")
         }
         StatusCode::NOT_FOUND if code == "clever.csi.resource-not-found" => {
-            Status::not_found("Axo resource not found")
+            Status::not_found("backend resource not found")
         }
         // A missing route must never be mistaken for successful idempotent
-        // deletion on an Axo deployment that has not implemented this contract.
-        StatusCode::NOT_FOUND => Status::unimplemented("Axo CSI endpoint is unavailable"),
+        // deletion on a backend deployment that has not implemented this contract.
+        StatusCode::NOT_FOUND => Status::unimplemented("backend CSI endpoint is unavailable"),
         StatusCode::CONFLICT => match code {
             "clever.csi.incompatible-resource" => {
                 Status::already_exists("resource exists with incompatible attributes")
             }
             "clever.csi.operation-in-progress" => {
-                Status::aborted("Axo operation is already in progress")
+                Status::aborted("backend operation is already in progress")
             }
-            _ => Status::failed_precondition("Axo resource is in use or cannot be fenced"),
+            _ => Status::failed_precondition("backend resource is in use or cannot be fenced"),
         },
         StatusCode::BAD_REQUEST => match code {
             "clever.csi.invalid-pagination-token" => {
                 Status::aborted("invalid snapshot pagination token")
             }
-            _ => Status::invalid_argument("Axo rejected request parameters"),
+            _ => Status::invalid_argument("backend rejected request parameters"),
         },
         StatusCode::PRECONDITION_FAILED => {
-            Status::failed_precondition("Axo resource precondition failed")
+            Status::failed_precondition("backend resource precondition failed")
         }
         StatusCode::REQUEST_TIMEOUT | StatusCode::GATEWAY_TIMEOUT => {
-            Status::deadline_exceeded("Axo request deadline exceeded")
+            Status::deadline_exceeded("backend request deadline exceeded")
         }
         StatusCode::UNPROCESSABLE_ENTITY => {
             Status::out_of_range("requested capacity is outside backend limits")
         }
         StatusCode::TOO_MANY_REQUESTS | StatusCode::INSUFFICIENT_STORAGE => {
-            Status::resource_exhausted("Axo capacity or request limit reached")
+            Status::resource_exhausted("backend capacity or request limit reached")
         }
         StatusCode::NOT_IMPLEMENTED => {
-            Status::unimplemented("Axo does not implement this operation")
+            Status::unimplemented("backend does not implement this operation")
         }
-        status if status.is_server_error() => Status::unavailable("Axo backend unavailable"),
+        status if status.is_server_error() => Status::unavailable("backend unavailable"),
         status if status.is_redirection() => {
-            Status::failed_precondition("Axo redirects are not allowed")
+            Status::failed_precondition("backend redirects are not allowed")
         }
-        _ => Status::internal("unexpected Axo response status"),
+        _ => Status::internal("unexpected backend response status"),
     }
 }

@@ -38,7 +38,7 @@ spec:
               - key: clever-cloud.com/csi
                 operator: In
                 values:
-                - supernova
+                - qemu
       tolerations:
       - operator: Exists
       containers:

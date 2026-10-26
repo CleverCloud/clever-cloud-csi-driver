@@ -1,12 +1,12 @@
-# Axo Kubernetes CSI API proposal
+# Backend Kubernetes CSI API proposal
 
 **Status: proposed resource API, revision `2026-10-13`. Neither the current
-driver client nor Axo implements this revision.** The driver currently uses
-the earlier action API, [clever-csi-v1](axo-api-v1.md); its HTTP contract tests
+driver client nor the backend implements this revision.** The driver currently uses
+the earlier action API, [clever-csi-v1](backend-api-v1.md); its HTTP contract tests
 validate that earlier interface, restored from implementation baseline `339e7f0`. Updating this document does not change
 the driver, deploy an API or enable a migration.
 
-[axo-openapi.yaml](axo-openapi.yaml) defines the proposed routes, JSON schemas,
+[backend-openapi.yaml](backend-openapi.yaml) defines the proposed routes, JSON schemas,
 per-operation responses and machine-readable error catalogue. This document
 defines their lifecycle and safety requirements. Both must agree before the
 client and backend are implemented. CSI remains the vendored v1.12.0 protocol.
@@ -19,13 +19,13 @@ The API is a cluster-scoped facade under:
 /v4/kubernetes/organisations/{ownerId}/clusters/{clusterId}/csi
 ```
 
-Axo authorizes the owner and cluster, resolves storage identities, and routes
-attachment work to compute/Supernova. It remains the authority for adoption,
+The backend authorizes the owner and cluster, resolves storage identities, and routes
+attachment work to the compute service and the hypervisor. It remains the authority for adoption,
 billing, RBD journals, VM incarnations and fencing. The driver receives neither
 Ceph credentials nor direct hypervisor access. Caller-supplied pool, namespace,
 Ceph `clusterID`, node labels and `volumeContext` are hints, never authority.
 
-All routes resolve identities against the authorized Axo registry and, where
+All routes resolve identities against the authorized backend registry and, where
 applicable, the legacy ceph-csi journal. Failed lookup is an error, not proof
 of absence. GET, listings and `resolve` are pure reads: no alias registration,
 adoption, formatting or billing. Listings include verified legacy resources
@@ -35,7 +35,7 @@ explicit backend step of attachment on the new path.
 ## Authentication and audience
 
 - The driver uses a cluster-scoped Biscuit in `Authorization: Bearer ...`.
-  Axo checks path scope and permitted operation on every request. The controller
+  The backend checks path scope and permitted operation on every request. The controller
   rereads its projected token file for each HTTP request.
 - Resource reads may also use OAuth1, subject to organization membership,
   Kubernetes admission and the platform allow-list. The capability endpoint
@@ -78,7 +78,7 @@ An inventory finding is not permission to edit a bound PV's handle.
 
 For new nodes, `nodeId` is the exact VM incarnation from
 `/etc/clever-csi/node-id`; a replacement has a different identity. A historical
-Node name is accepted only through Axo's authoritative legacy-pool registry.
+Node name is accepted only through the backend's authoritative legacy-pool registry.
 Neither names nor IPs are translated into guessed QEMU targets. This contract
 introduces no lowercase-UUID restriction inconsistent with NodeGetInfo.
 Node IDs remain nonempty tokens of at most 256 UTF-8 bytes without whitespace
@@ -121,7 +121,7 @@ point-in-time cut; processing readiness is a separate state.
 
 JSON uses camelCase, uppercase business enums and RFC 3339 UTC timestamps
 preserving nanoseconds. CSI maps `parameters` and `volumeContext` retain original
-keys. Shared error-context discriminators retain Axo's snake_case convention.
+keys. Shared error-context discriminators retain the backend's snake_case convention.
 
 ## Idempotence, operations and deletion
 
@@ -160,7 +160,7 @@ justify blind mutation retries inside an existing CSI call.
 
 The front must tolerate maximum wait plus response overhead. Bound server
 waiters and concurrent intents too. `X-Request-Id` is only bounded correlation
-metadata; Axo retains its separately generated `apiRequestId`.
+metadata; the backend retains its separately generated `apiRequestId`.
 
 Every DELETE requires **200 with a validated outcome**:
 
@@ -186,11 +186,11 @@ and preserve clone dependencies. Returned capacity fits the requested range
 after backend rounding. Writable NodeStage grows an existing filesystem to the
 guest device capacity before success, including a new clone/restore PVC whose
 size does not trigger NodeExpandVolume. Read-only stage cannot grow a filesystem:
-Axo must complete and verify necessary clone/restore filesystem growth to the
+the backend must complete and verify necessary clone/restore filesystem growth to the
 requested capacity before read-only attachment eligibility. Image growth alone
 is insufficient. Use exclusive maintenance ownership and preserve source data.
 
-**The Node plugin never runs mkfs.** Axo initializes only newly allocated images
+**The Node plugin never runs mkfs.** The backend initializes only newly allocated images
 under exclusive durable ownership. Interrupted initialization reconciles the
 recorded image and filesystem; retries must not blindly reformat. Adopted images,
 including blank or ambiguous images, are never formatted. Unsupported filesystems
@@ -217,7 +217,7 @@ including guest rescans and filesystem growth where applicable.
 
 Every ensure request includes nonempty `allowedTransports`. The client verifies
 the required `ATTACHMENT_ALLOWED_TRANSPORTS` capability before each attachment
-request within its deadline. Axo authoritatively classifies the route and checks
+request within its deadline. The backend authoritatively classifies the route and checks
 the allowlist atomically before attachment, adoption or ownership mutation.
 An excluded route returns HTTP 412 (`transport-not-allowed`), never a false
 legacy no-op. QEMU-compatible requests allow `["LEGACY_KRBD", "QEMU"]`;
@@ -231,7 +231,7 @@ The flat record includes `volumeId`, `nodeId`, `transport`, `device`,
 `generation`, `readonly`, shape and initialization policy. Validate combinations:
 
 - `QEMU` requires `device.bus: VIRTIO_SCSI` and an exact ASCII serial matching
-  `[A-Za-z0-9_-]{1,36}`, the Supernova hot-plug volume id: QEMU scsi-hd over
+  `[A-Za-z0-9_-]{1,36}`, the hypervisor hot-plug volume id: QEMU scsi-hd over
   virtio-scsi, not virtio-blk.
 - `LEGACY_KRBD` requires `device: null` and an authoritative legacy node. It
   is reserved for a verified legacy image not yet adopted on the new path,
@@ -259,7 +259,7 @@ use an API-only generation to detect reuse. Never truncate, case-fold or derive
 the serial by shortening the volume handle. Node may remove transport padding
 before exact comparison; conflicting attributes or duplicate matches are errors.
 
-Before committing an attachment, Axo must:
+Before committing an attachment, the backend must:
 
 1. Resolve the image and verify owner, cluster and exact incarnation.
 2. Acquire the durable per-image claim and fence superseded work.
@@ -337,9 +337,9 @@ may affect subsequent pages; do not claim global snapshot isolation.
 ## Version, capabilities and errors
 
 The driver always pins `Clever-API-Version: 2026-10-13`. Absence may mean latest
-for other clients, but not for a deployed CSI controller. Axo selects supported
+for other clients, but not for a deployed CSI controller. The backend selects supported
 semantics and echoes the effective revision, never silently substitutes an
-incompatible latest shape. Retain Axo's `/v4` prefix without an extra CSI version
+incompatible latest shape. Retain the backend's `/v4` prefix without an extra CSI version
 segment. Version dispatch needs integration in these handlers; it is not automatic.
 
 Capabilities publish effective `contractVersion`, `minContractVersion`,
@@ -368,7 +368,7 @@ indefinitely. Readiness remains distinct from process liveness.
 
 The complete machine-code catalogue is `x-csi-error-codes` in OpenAPI. Each
 handler code has one HTTP status, a default CSI mapping and any RPC-specific
-exception. Codes use `clever.kubernetes.*`. Handler errors follow Axo's
+exception. Codes use `clever.kubernetes.*`. Handler errors follow the backend's
 `HTTPErrorBody` (`apiRequestId`, `code`, `context`, `error`). Middleware errors
 may keep existing envelopes and require status-based handling. Unknown future
 codes never imply success. HTTP 401/403 retain their authentication/authorization
@@ -435,5 +435,5 @@ Release acceptance additionally requires:
   response-size limits and representative concurrent load.
 
 Confirm frontend idle/URL limits, handle inventory, authorization integration and
-rollout features with the Axo team before freezing the first revision. Error
+rollout features with the platform team before freezing the first revision. Error
 namespace and wait limits are decisions in this draft, not deployed guarantees.

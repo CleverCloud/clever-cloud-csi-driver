@@ -1,15 +1,15 @@
 # Deploying the Clever CSI driver
 
 The chart and generated bundles package the driver; they do not implement or
-activate Axo/Supernova's required volume API. Deploy to a disposable validation
+activate the platform's required volume API. Deploy to a disposable validation
 cluster first. The default image tag is `v0.1.0`, which must be built and published
 before installation; an unbuilt release is not made available by these files.
 
 This guide describes the current binary and chart, whose controller uses the
-[current `clever-csi-v1` HTTP contract](axo-api-v1.md) (implementation baseline `339e7f0`).
-The [REST proposal dated 2026-10-13](axo-api.md) is not implemented by this
-client or Axo. Its dated version header, resource routes, response schemas and
-capability negotiation require the [client migration](axo-api.md#client-migration)
+[current `clever-csi-v1` HTTP contract](backend-api-v1.md) (implementation baseline `339e7f0`).
+The [REST proposal dated 2026-10-13](backend-api.md) is not implemented by this
+client or the backend. Its dated version header, resource routes, response schemas and
+capability negotiation require the [client migration](backend-api.md#client-migration)
 before these deployment phases can target a server implementing that proposal.
 Changing documentation or chart values does not switch the client's protocol.
 
@@ -26,7 +26,7 @@ docker build --tag clever-csi-driver:test .
 python3 deploy/test_image.py clever-csi-driver:test
 # Requires a Docker daemon allowed to run disposable privileged containers:
 bash deploy/test_linux.sh
-# CSI conformance with a test-only combined server and a local Axo fixture:
+# CSI conformance with a test-only combined server and a local backend fixture:
 bash deploy/test_linux.sh sanity
 ```
 
@@ -38,7 +38,7 @@ SCSI device during expansion. Device identity is validated before that sysfs
 write. The node never uses Ceph clients or Ceph credentials. Kubelet still sends
 credentials from existing PV `node-stage-secret` references; the driver ignores
 these request fields. Keep referenced Secrets until their consumers are retired. It
-refuses to format unknown disks: Axo must supply a preformatted XFS/ext4 image
+refuses to format unknown disks: the backend must supply a preformatted XFS/ext4 image
 for Filesystem volumes, while raw Block volumes are never formatted.
 
 GitHub Actions runs formatting, Clippy, Rust tests, Helm lint and deployment
@@ -82,7 +82,7 @@ For filesystems, effective read-only access combines the attachment, volume
 capability, mount options and individual publication request. A false
 `NodePublishVolume.readonly` value never overrides an existing read-only
 constraint. Read-only Block publication additionally requires an attachment
-marked read-only by Axo and a guest block device reporting read-only. A request
+marked read-only by the backend and a guest block device reporting read-only. A request
 for a read-only Block publication on a writable attachment is rejected: a bind
 mount flag alone does not prevent device writes. The plugin does not set the
 whole device read-only as a side effect of one pod's request.
@@ -106,7 +106,7 @@ mounts. Conflicting identities and mounted devices still cause refusal. Raw
 Block checks inspect the block inode's device number as well as mountinfo.
 Do not delete the state registry to bypass an ownership failure.
 If recovery refuses a volume, stop its consumers, preserve the registry and
-collect device serials, mount tables and Axo attachment state. Resolve the
+collect device serials, mount tables and backend attachment state. Resolve the
 ownership discrepancy or replace the node through a fenced handoff; there is no
 supported manual registry-editing command. Even an exclusive-open check cannot
 prove that every raw Block file descriptor in another process is closed. Backend
@@ -117,8 +117,8 @@ and verifying ownership. It does not recursively remove data or unrelated
 targets. The staging directory remains owned by kubelet after Unstage.
 
 The QEMU path supports XFS/ext4 and single-node writer access; single-node
-reader-only access is accepted by the driver, but the current Supernova
-hot-plug (MR !168) has no read-only blockdev option, so Axo refuses it on new
+reader-only access is accepted by the driver, but the current hypervisor
+hot-plug has no read-only blockdev option, so the backend refuses it on new
 nodes and reader-only workloads stay on legacy nodes until that option exists.
 Its
 mount-option allowlist is `ro`, `rw`, `nosuid`, `nodev`, `noexec`, `noatime`,
@@ -138,15 +138,15 @@ all descendant mounts are absent.
 A writable filesystem Stage grows an existing XFS/ext4 filesystem to the
 available device capacity, including on retry after an interrupted growth. It
 never formats the disk. Read-only and Block stages do not grow a filesystem;
-Axo must prepare a larger filesystem clone/restore before a read-only attachment
-can become eligible. See the [backend contract](axo-api-v1.md).
+the backend must prepare a larger filesystem clone/restore before a read-only attachment
+can become eligible. See the [backend contract](backend-api-v1.md).
 
 ## Inputs owned by the platform
 
 - Install `clever/linux-vm:kube` on the relevant hypervisors and select
-  `/linux-vm-kube` only for new CKE node generations. Supernova hot-plugs
+  `/linux-vm-kube` only for new CKE node generations. The hypervisor hot-plugs
   volumes as `scsi-hd` disks on virtio-scsi controllers created at boot
-  (Supernova MR !168, merged 2026-10-15, ported into Axo `supernova-hv` on
+  (hypervisor change merged 2026-10-15, matching backend change merged
   2026-10-16), so an attachment never touches the PCI bus and the guest needs
   no ACPI/PCI hotplug support. The guest needs the virtio-scsi and SCSI disk
   drivers plus mounted block-device write support: `SCSI_VIRTIO`, `BLK_DEV_SD`
@@ -159,21 +159,21 @@ can become eligible. See the [backend contract](axo-api-v1.md).
   preserved, while other cases follow the standard kernel hook and require
   checking before installation. Check the effective build configuration and
   boot the selected image in a test guest before rollout. The package alone
-  does not change the kernel selected by Axo for a node generation, and a
-  hypervisor with kernel injection disabled (Supernova MR !175,
-  `disable_kernel_injection`) ignores that selection: its guest images must
+  does not change the kernel selected by the platform for a node generation, and a
+  hypervisor with kernel injection disabled (its
+  `disable_kernel_injection` setting) ignores that selection: its guest images must
   then carry their own kernel with the symbols above.
 - Enable volume hot-plug on every hypervisor hosting CSI-eligible nodes before
-  those nodes boot: Supernova `hotplug_volumes.enabled: true`, on a QEMU whose
+  those nodes boot: hypervisor `hotplug_volumes.enabled: true`, on a QEMU whose
   `virtio-scsi-pci` supports `iothread-vq-mapping` (QEMU 10 or later; with an
   older QEMU every ephemeral boot on that hypervisor fails). Only ephemeral VMs
   booted after enabling carry the eight volume controllers; a node booted
   earlier never gains them, so it must be replaced by a new node generation
-  rather than relabelled into the `clever-cloud.com/csi: supernova` pool.
-  Supernova refuses a hard reboot of a VM whose hot-plugged volumes it can
+  rather than relabelled into the `clever-cloud.com/csi: qemu` pool.
+  The hypervisor refuses a hard reboot of a VM whose hot-plugged volumes it can
   still list over QMP and reports the refusal only in the hypervisor logs; when
   the monitor does not answer within 2 s the check is skipped and the reboot
-  rebuilds QEMU without the volumes. Detach, and let Axo clear its attachment
+  rebuilds QEMU without the volumes. Detach, and let the backend clear its attachment
   records, before any forced reboot, and treat a node hard-rebooted while
   volumes were attached as a new incarnation. The hypervisor caps hot-plugged
   volumes per VM (`hotplug_volumes.max_per_vm`, default and maximum 2048); the
@@ -183,13 +183,13 @@ can become eligible. See the [backend contract](axo-api-v1.md).
   hypervisor's `max_per_vm: 0` into it: CSI reads 0 as "no limit", and such a
   hypervisor must not host CSI nodes.
 - Create `/etc/clever-csi/node-id` in each guest, containing the exact VM incarnation identifier
-  accepted by Axo/Supernova. The chart mounts that existing file with
+  accepted by the platform. The chart mounts that existing file with
   `hostPath.type: File`; a missing file prevents startup. A Kubernetes Node name,
-  `cluster-vm-id` label or unverified DMI value is not a substitute. Axo must
+  `cluster-vm-id` label or unverified DMI value is not a substitute. The backend must
   check VM incarnation and cluster ownership on every attach.
-- Supply the existing `clever-csi-axo` Secret in `kube-system`, key `token`, using
+- Supply the existing `clever-csi-backend` Secret in `kube-system`, key `token`, using
   a short-lived Biscuit scoped to the organisation and cluster. It is mounted
-  only into the controller. Axo remains responsible for authorization, durable
+  only into the controller. The backend remains responsible for authorization, durable
   attachment intents, fencing, confirmed shutdown, and token rotation/revocation.
   Secret rotation uses a projected directory, not a `subPath` mount.
 - Keep existing `CSIDriver rbd.csi.ceph.com`, StorageClasses, PVs/PVCs, referenced
@@ -201,7 +201,7 @@ can become eligible. See the [backend contract](axo-api-v1.md).
 
 | Phase | New controller roles | New node plugin |
 | --- | --- | --- |
-| `stage` / chart defaults | Disabled | Only on `clever-cloud.com/csi=supernova` nodes |
+| `stage` / chart defaults | Disabled | Only on `clever-cloud.com/csi=qemu` nodes |
 | `attach` | Attacher only | Same new pool |
 | `final` | Attacher, provisioner, resizer, snapshotter | Same new pool |
 
@@ -211,8 +211,8 @@ by both name and namespace. `controller.ownershipConfirmed=true` is a deliberate
 operator declaration; Helm cannot determine that the previous controller is
 stopped or that a volume is safe to transfer.
 
-These phases are requirements for a future Axo integration, not an executable
-cluster upgrade on the current catalog. Axo must persist a per-cluster phase and
+These phases are requirements for a future backend integration, not an executable
+cluster upgrade on the current catalog. The platform must persist a per-cluster phase and
 per-generation node profile, and render the matching legacy/new controller roles
 and node affinities on every reconciliation. Its current shared `CEPH_CSI`
 corpus and forced server-side apply will restore a manually removed attacher.
@@ -225,10 +225,10 @@ cutover. Separate workloads that the QEMU path cannot serve and keep them on
 legacy nodes. Group snapshots have no replacement handler in this driver;
 their outstanding resources must be resolved before removing that legacy role.
 
-Before `stage`, update the legacy ceph-csi DaemonSet in Axo's catalog to require
-`clever-cloud.com/csi NotIn [supernova]`. The new DaemonSet requires `In
-[supernova]`; the absence of the label matches only the legacy plugin. Ensure
-these requirements survive Axo reconciliation. Never relabel a live node to
+Before `stage`, update the legacy ceph-csi DaemonSet in the platform catalog to require
+`clever-cloud.com/csi NotIn [qemu]`. The new DaemonSet requires `In
+[qemu]`; the absence of the label matches only the legacy plugin. Ensure
+these requirements survive platform reconciliation. Never relabel a live node to
 switch implementations: the socket and registrar identity are shared. A fresh
 node receives its label and profile at creation. The new DaemonSet uses
 `OnDelete` to defer pod replacement for image and other pod-template updates.
@@ -239,7 +239,7 @@ The platform must create that label and the incarnation file together; neither
 the chart nor the current catalog produces the node profile. Once node plugins
 have been deployed, treat `node.poolLabel`, `node.poolValue`, the complementary
 legacy exclusion and the corresponding node labels as immutable on active
-nodes. Enforce this in Axo's persisted profile and reconciliation/admission
+nodes. Enforce this in the platform's persisted profile and reconciliation/admission
 policy. An offline Helm render cannot compare against live node eligibility.
 Changing these settings requires a separately planned, drained and fenced node
 generation transition; updating both affinities in place is not a safe migration.
@@ -247,7 +247,7 @@ During `stage`, keep new nodes cordoned and prohibit storage workloads on them.
 The old attacher can mark a VolumeAttachment attached without QEMU metadata;
 such an attachment is not automatically republished by installing the new driver.
 
-Existing ceph-csi CSINodes can report a Kubernetes Node name as NodeID. Axo must
+Existing ceph-csi CSINodes can report a Kubernetes Node name as NodeID. The backend must
 explicitly route those legacy attachments as `legacy-krbd` while routing new VM
 incarnation identities as `qemu`. Never resolve a name or IP to a guessed QEMU
 instance. The backend must advertise and implement this mixed-pool contract
@@ -268,10 +268,10 @@ new attacher, and confirm it acquires the expected lease before any node roll. D
 not depend on leader election to coordinate two different controller
 implementations: a legacy sidecar must not reacquire the role later. Other
 legacy roles remain active until their explicit handoff. All gRPC sidecar
-operation timeouts are 180 seconds; Axo's operation budget must be shorter and
+operation timeouts are 180 seconds; the backend's operation budget must be shorter and
 its timeout/cancellation contract must prevent a late attach after detach.
 Both pod roles default to a 210-second termination grace period, exceeding the
-180-second sidecar and 120-second Axo budgets. Node commands have no independent
+180-second sidecar and 120-second backend budgets. Node commands have no independent
 kill timeout: an operation survives RPC cancellation until its process exits,
 and shutdown waits for those effects. The process lock is inherited by child
 commands so a replacement driver cannot clear recovery state while an old
@@ -301,37 +301,37 @@ helm upgrade --install clever-csi charts/clever-csi-driver \
 
 Roll via the platform's persistent per-cluster/per-generation profile. A single
 incoming/outgoing node with drain, CSI barriers and pause/resume is a **required
-Axo feature**, not an assumption about the currently implemented roll. Transfer
-only after the old volume is unmounted and Axo proves release or fences the old
+backend feature**, not an assumption about the currently implemented roll. Transfer
+only after the old volume is unmounted and the backend proves release or fences the old
 client. An absent Ceph watcher/lock alone does not establish that a partitioned
 writer cannot return. Stop on alternating Node boot IDs, duplicate plugins,
 uncertain attach results, orphan attachments, or lost ownership proof.
 
 Coexistence needs a defined resize contract: legacy ceph-csi can resize RBD
 without telling QEMU. Do not permit resize of already migrated volumes until
-Axo updates QEMU capacity as part of that path, or deliberately transfers the
+the backend updates QEMU capacity as part of that path, or deliberately transfers the
 resizer role with a controller able to serve both pools. The platform must reject
 size-changing PVC updates for affected volumes while this gate is active, through
 admission or an equivalent enforced policy. Neither the chart nor Helm provides
 that coordination. The resizer disables its pod-cache/in-use workaround because
 the backend contract requires online growth; a backend requiring offline resize
-does not satisfy this deployment contract. Supernova's hot-plug path (MR !168)
-exposes no resize instruction, so Axo cannot yet update QEMU capacity as that
-path requires; keep this gate active for QEMU volumes until Supernova provides
-one and Axo demonstrates image-then-QEMU growth on real Supernova.
+does not satisfy this deployment contract. The hypervisor's hot-plug path
+exposes no resize instruction, so the backend cannot yet update QEMU capacity as that
+path requires; keep this gate active for QEMU volumes until the hypervisor provides
+one and the backend demonstrates image-then-QEMU growth on a real hypervisor.
 
 Before `final`, the platform must enforce a persistent scheduling/admission gate:
 **no workload that can consume a native Clever CSI volume may be scheduled on a
 legacy node**. This applies to new PVCs, restores, clones, existing native PVCs,
 replacement pods and future node generations. Apply the policy to every such
-consumer, including workload controllers, and keep it effective across Axo
+consumer, including workload controllers, and keep it effective across the backend
 reconciliation. A label on the CSI DaemonSet, the identity of the active
 provisioner, or `WaitForFirstConsumer` alone does not provide this guarantee:
 this driver publishes no CSI topology contract. Use an enforced scheduler or
 admission policy that restricts these consumers to the new pool (or finish
 retiring the legacy pool before native provisioning). Verify that a disposable
 native PVC consumer explicitly targeting a legacy node is rejected, and that its
-new-pool counterpart can attach and mount. Axo must also reject a native-volume
+new-pool counterpart can attach and mount. The backend must also reject a native-volume
 attachment routed to `legacy-krbd` before changing any backend state.
 **Do not enable the new provisioner or enter `final` until this gate is enforced
 and verified.** The gate must remain in force for as long as legacy nodes remain;
@@ -350,7 +350,7 @@ and kubelet even when their sensitive contents are no longer needed.
 Readiness `/readyz` on port 9808 checks driver readiness; liveness `/healthz`
 checks the service. These are not proof that kubelet has registered the plugin
 or that a disk was safely handed over. Check CSINode identity, registrar logs,
-VolumeAttachments, Axo state and a real disposable PVC/pod separately.
+VolumeAttachments, backend state and a real disposable PVC/pod separately.
 The current controller's readiness check validates `clever-csi-v1`; it does not
 negotiate or verify the proposed dated REST contract.
 
@@ -364,25 +364,25 @@ then delete that node's DaemonSet pod. Check its replacement image digest,
 registrar, CSINode and disposable volume before uncordoning and moving to the
 next node. Never delete all node-plugin pods together to force an update.
 
-## Axo catalog bundles
+## Platform catalog bundles
 
 `python3 deploy/render.py` writes deterministic `deploy/rendered/{stage,attach,final}`
 bundles. Each contains numbered YAML files and a `manifest.txt` in apply order.
-The renderer removes Helm ownership labels and leaves Axo to stamp its manager
+The renderer removes Helm ownership labels and leaves the platform to stamp its manager
 and plugin labels, following the existing Karpenter catalog convention. No
 Namespace, Secret, StorageClass, CSIDriver or CRD is included; reverse-order
 teardown therefore cannot delete those shared objects.
 
-These outputs are integration inputs, **not a change to Axo's catalog**. A future
-Axo PR must register the plugin and its owned GVKs, wire its phase/state gates,
+These outputs are integration inputs, **not a change to the platform catalog**. A future
+platform change must register the plugin and its owned GVKs, wire its phase/state gates,
 reject adoption of a foreign install, and provide `${OVD_CLUSTER_ID}` plus the
 new `${OVD_CSI_ORGANISATION_ID}` substitution. The latter is not registered in
-Axo today and must be added to its explicit placeholder allowlist. The API base
+the platform today and must be added to its explicit placeholder allowlist. The API base
 URL defaults to `https://api.clever-cloud.com`; override it at render time for a
-different deployment. Axo must provision the token Secret independently and
+different deployment. The platform must provision the token Secret independently and
 preserve existing shared objects during legacy teardown.
 
-Resource budgets must be stored per cluster in Axo's persisted configuration and
+Resource budgets must be stored per cluster in the platform's persisted configuration and
 passed into every render/reconciliation; do not vendor one fixed set of limits
 for every cluster. `sidecarResources` applies separately to each sidecar
 container. `sidecarResourcesByRole` accepts `registrar`, `attacher`, `provisioner`,
@@ -415,7 +415,7 @@ To render fully concrete bundles for a test cluster without placeholders:
 ```sh
 python3 deploy/render.py --output ./test-results/manifests \
   --cluster-id kubernetes_example --organisation-id orga_example \
-  --axo-url https://axo.example.test --image-tag lab \
+  --backend-url https://backend.example.test --image-tag lab \
   --phase attach --values cluster-values.yaml
 ```
 
@@ -424,7 +424,7 @@ all override the phase's defaults. Explicit image, API URL and identity flags
 take precedence. Without `--phase`, all three phase directories are generated;
 `--phase` limits rendering and `--check` to the selected phase(s).
 
-Review and vendor the selected phase into Axo only after implementing those
+Review and vendor the selected phase into the platform catalog only after implementing those
 integration hooks; do not manually apply all three phases together. Changing
 roles is a controlled state transition, not an automatic manifest replacement.
 

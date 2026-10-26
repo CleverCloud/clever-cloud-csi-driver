@@ -1,4 +1,4 @@
-//! Two deployment roles from the same image. Axo credentials exist only in controller mode.
+//! Two deployment roles from the same image. Backend credentials exist only in controller mode.
 use clap::{Parser, ValueEnum};
 use clever_csi_driver::{
     controller::{ControllerConfig, CsiController},
@@ -32,7 +32,7 @@ enum Mode {
 #[derive(Parser, Debug)]
 #[command(
     version,
-    about = "Clever Cloud CSI driver (Axo controller or Linux node plugin)"
+    about = "Clever Cloud CSI driver (backend controller or Linux node plugin)"
 )]
 struct Args {
     #[arg(long, env = "CSI_MODE")]
@@ -43,19 +43,19 @@ struct Args {
     driver_name: String,
     #[arg(long, env = "CSI_HEALTH_ADDRESS", default_value = "0.0.0.0:9808")]
     health_address: SocketAddr,
-    #[arg(long, env = "CSI_AXO_URL")]
-    axo_url: Option<String>,
+    #[arg(long, env = "CSI_BACKEND_URL")]
+    backend_url: Option<String>,
     #[arg(long, env = "CSI_ORGANISATION_ID")]
     organisation_id: Option<String>,
     #[arg(long, env = "CSI_CLUSTER_ID")]
     cluster_id: Option<String>,
-    #[arg(long, env = "CSI_AXO_TOKEN_FILE")]
-    axo_token_file: Option<PathBuf>,
+    #[arg(long, env = "CSI_BACKEND_TOKEN_FILE")]
+    backend_token_file: Option<PathBuf>,
     /// Test environments only. TLS certificate verification is never disabled.
     #[arg(long, env = "CSI_ALLOW_INSECURE_HTTP", default_value_t = false)]
     allow_insecure_http: bool,
-    #[arg(long, env = "CSI_AXO_TIMEOUT_SECONDS", default_value_t = 120)]
-    axo_timeout_seconds: u64,
+    #[arg(long, env = "CSI_BACKEND_TIMEOUT_SECONDS", default_value_t = 120)]
+    backend_timeout_seconds: u64,
     /// Platform VM incarnation identifier, not a Kubernetes Node name or IP.
     #[arg(long, env = "CSI_NODE_ID", conflicts_with = "node_id_file")]
     node_id: Option<String>,
@@ -73,7 +73,7 @@ struct Args {
     sys_block_dir: PathBuf,
     #[arg(long, env = "CSI_KUBELET_ROOT", default_value = "/var/lib/kubelet")]
     kubelet_root: PathBuf,
-    /// Attachable volumes NodeGetInfo reports for this VM, 1 to 2048. Supernova
+    /// Attachable volumes NodeGetInfo reports for this VM, 1 to 2048. The hypervisor
     /// caps hot-plugged volumes per VM at 2048 (`hotplug_volumes.max_per_vm`);
     /// set the lowest cap configured on the cluster's hypervisors. 0 is refused:
     /// CSI reads it as "no limit", which never describes a hypervisor cap.
@@ -102,16 +102,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     )?;
     let (controller, node) = match args.mode {
         Mode::Controller => {
-            if args.axo_timeout_seconds == 0 || args.axo_timeout_seconds > 600 {
-                return Err("--axo-timeout-seconds must be between 1 and 600".into());
+            if args.backend_timeout_seconds == 0 || args.backend_timeout_seconds > 600 {
+                return Err("--backend-timeout-seconds must be between 1 and 600".into());
             }
             let controller = CsiController::new(ControllerConfig {
-                axo_url: required(args.axo_url, "axo-url")?,
+                backend_url: required(args.backend_url, "backend-url")?,
                 organisation_id: required(args.organisation_id, "organisation-id")?,
                 cluster_id: required(args.cluster_id, "cluster-id")?,
-                token_file: required(args.axo_token_file, "axo-token-file")?,
+                token_file: required(args.backend_token_file, "backend-token-file")?,
                 allow_http: args.allow_insecure_http,
-                timeout: Duration::from_secs(args.axo_timeout_seconds),
+                timeout: Duration::from_secs(args.backend_timeout_seconds),
             })?;
             (Some(controller), None)
         }

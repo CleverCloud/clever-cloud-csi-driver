@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Stateful test-only Axo implementing the current clever-csi-v1 client contract.
+"""Stateful test-only backend implementing the current clever-csi-v1 client contract.
 
-Volumes are sparse files formatted by "Axo" (preformatted policy). An attachment
+Volumes are sparse files formatted by the backend (preformatted policy). An attachment
 creates a loop device + a synthetic sysfs entry (device/vpd_pg80 carrying the
 serial) + a block node in a fake device root, emulating a QEMU scsi-hd hotplug.
 Detach removes them (hot-unplug).
@@ -438,7 +438,7 @@ def main():
         os.makedirs(d, exist_ok=True)
     LOG = open(ARGS.log, "a")
     srv = ThreadingHTTPServer((ARGS.listen, ARGS.port), Handler)
-    print("fake axo listening", ARGS.port, file=sys.stderr, flush=True)
+    print("fake backend listening", ARGS.port, file=sys.stderr, flush=True)
     srv.serve_forever()
 
 

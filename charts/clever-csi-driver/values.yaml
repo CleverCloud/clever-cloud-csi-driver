@@ -7,7 +7,7 @@ image:
   digest: ""
   pullPolicy: IfNotPresent
 imagePullSecrets: []
-# Exceeds sidecar/Axo deadlines; never proves a blocked kernel operation ended.
+# Exceeds sidecar/backend deadlines; never proves a blocked kernel operation ended.
 terminationGracePeriodSeconds: 210
 # No Namespace, CSIDriver, StorageClass, Secret or snapshot CRD is owned by this chart.
 controller:
@@ -16,8 +16,8 @@ controller:
   ownershipConfirmed: false
   clusterId: ""
   organisationId: ""
-  axoUrl: https://api.clever-cloud.com
-  existingSecret: clever-csi-axo
+  backendUrl: https://api.clever-cloud.com
+  existingSecret: clever-csi-backend
   tokenKey: token
   sidecars:
     attacher: true
@@ -36,12 +36,12 @@ controller:
     limits: {memory: 256Mi}
 node:
   enabled: true
-  # A platform-provisioned file containing the exact VM incarnation ID Axo/Supernova resolve.
+  # A platform-provisioned file containing the exact VM incarnation ID the platform resolves.
   # This is NOT a Kubernetes Node name, cluster-vm-id, or guessed DMI identity.
   idFile: /etc/clever-csi/node-id
   stateDirectory: /var/lib/clever-csi
   kubeletDirectory: /var/lib/kubelet
-  # Reported by NodeGetInfo, 1 to 2048. Supernova caps hot-plugged volumes per VM
+  # Reported by NodeGetInfo, 1 to 2048. The hypervisor caps hot-plugged volumes per VM
   # at 2048 (hotplug_volumes.max_per_vm); use the lowest cap configured on the
   # cluster's hypervisors. 0 is refused: CSI reads it as "no limit", and a
   # hypervisor whose max_per_vm is 0 must not host CSI nodes at all.
@@ -49,7 +49,7 @@ node:
   # Immutable once this pool hosts node plugins; changing eligibility can delete
   # live DaemonSet pods even with OnDelete. See docs/operations.md.
   poolLabel: clever-cloud.com/csi
-  poolValue: supernova
+  poolValue: qemu
   resources:
     requests: {cpu: 50m, memory: 64Mi}
     limits: {memory: 256Mi}

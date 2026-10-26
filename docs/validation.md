@@ -1,10 +1,10 @@
 # Validation
 
-The runtime checks exercise the [current `clever-csi-v1` HTTP contract](axo-api-v1.md),
+The runtime checks exercise the [current `clever-csi-v1` HTTP contract](backend-api-v1.md),
 which originated at baseline `339e7f0` and now requires the guarded attachment
 transport feature. The
-[REST proposal dated 2026-10-13](axo-api.md) requires the
-[client migration](axo-api.md#client-migration) and an Axo implementation;
+[REST proposal dated 2026-10-13](backend-api.md) requires the
+[client migration](backend-api.md#client-migration) and a backend implementation;
 the existing controller tests do not exercise that proposal.
 
 ## Review follow-up on 2026-10-14
@@ -33,21 +33,22 @@ The review corrections were checked locally, without applying a cluster change:
   renderer values. They do not enforce scheduling/admission policy in a cluster.
 - Both OpenAPI documents validated; the REST proposal passed **187/187 schema
   fixtures**, covering guarded transport selection and legacy shape exceptions.
-  These document checks do not implement or validate a real Axo backend.
+  These document checks do not implement or validate a real backend.
 - The final Docker image was rebuilt and passed `deploy/test_image.py`, including
   CLI validation, filesystem tools, read-only root filesystems and health/readiness
   checks in both roles.
 
 The Linux runners removed their owned loops, containers and scratch/target
 volumes, including after the failed initial conformance run. No test containers
-or temporary volumes remained. Real Axo/Supernova/QEMU/Ceph ownership, retirement,
+or temporary volumes remained. Real platform/QEMU/Ceph ownership, retirement,
 fencing and migration admission remain platform integration requirements. The
 dated 2026-10-13 results below are historical; their cluster checks were not
 repeated for this follow-up.
 
 ## Review follow-up on 2026-10-26
 
-Alignment with the Supernova hot-plug transport (MR !168) and its Axo port.
+This follow-up aligns the driver with the hypervisor volume hot-plug transport
+merged on 2026-10-15 and the matching backend change of 2026-10-16.
 `cargo fmt` and `cargo clippy --all-targets` were clean. The ordinary test run
 passed 107 tests (64 library, 42 controller contract, one gRPC transport); the
 new library case covers `NodeGetInfo` `max_volumes_per_node` (default 2048,
@@ -64,7 +65,7 @@ sanity-container and image checks were not repeated for this follow-up.
 
 Run `python3 -m pip install -r deploy/requirements.txt` followed by
 `python3 deploy/test_api_contract.py` to reproduce the checked-in
-[`axo-contract.json`](../deploy/fixtures/axo-contract.json) fixtures. CI executes
+[`backend-contract.json`](../deploy/fixtures/backend-contract.json) fixtures. CI executes
 this check alongside deployment validation.
 
 On 2026-10-13, the replacement document passed OpenAPI 3.1 validation and 169
@@ -78,7 +79,7 @@ ordinary schema tooling does not enforce that extension automatically.
 The document's 16 operations and 31 machine codes were also checked for matching
 HTTP responses, error catalogue references, version headers, authentication and
 operation-specific success bodies. These are local document checks, not
-runtime contract tests or evidence of an implemented Axo backend. The required
+runtime contract tests or evidence of an implemented backend. The required
 client migration and platform acceptance tests remain outstanding.
 
 ## Rust and real Linux storage tests
@@ -145,11 +146,11 @@ of remaining test resources was checked. The test is ignored in an ordinary
 image publication. SCSI VPD serial discovery used a sysfs fixture backed by
 real loop devices; this does **not** validate a QEMU virtio-scsi attachment.
 
-Controller contract tests use a mock Axo HTTP server implementing the historical
+Controller contract tests use a mock backend HTTP server implementing the historical
 routes and response shapes. The replacement API documents describe a future
 contract for both client and backend; neither those mocks nor the runtime
 implement it. There has been no end-to-end Ceph provisioning, real VM fencing,
-legacy volume migration or billing validation against Axo and Supernova.
+legacy volume migration or billing validation against the backend and hypervisor.
 
 ## CSI conformance fixture
 
@@ -157,7 +158,7 @@ legacy volume migration or billing validation against Axo and Supernova.
 test-only `examples/csi-sanity-server.rs` in a disposable privileged container.
 The combined test server exposes the production Controller and Node services on
 one socket; the production binary's separate roles are unchanged. A local Python
-Axo fixture checks routes/authentication and the allowed-transport guard, creates
+backend fixture checks routes/authentication and the allowed-transport guard, creates
 new sparse image files, formats them, and attaches only owned loop devices.
 Device transport/serial discovery is synthetic; filesystem and block operations
 run on Linux. This is neither the proposed REST backend nor real QEMU/Ceph.
@@ -180,7 +181,7 @@ Validated locally on 2026-10-13:
   was rebuilt and smoke-tested after the final node changes.
 - With a read-only root filesystem, node mode returned HTTP 200 for `/healthz`
   and `/readyz`. Controller mode as UID/GID 65532 returned health 200 and readiness
-  503 when the Axo endpoint was unavailable. `deploy/test_image.py` repeats these
+  503 when the backend endpoint was unavailable. `deploy/test_image.py` repeats these
   checks; CI runs them before publishing the image.
 - Helm default and final-phase lint, chart packaging, eight deployment-contract
   tests and deterministic render comparison passed. Unsupported resource kinds
@@ -199,7 +200,7 @@ Validated locally on 2026-10-13:
   publication, VolumeAttributesClass or group snapshots. Provisioner v5.3.0
   accepts `Topology=false` with a GA feature-gate warning; its gate is not
   locked to the default. These checks do not replace a full sidecar reconciliation
-  test against the future Axo volume API.
+  test against the future backend volume API.
   Runtime flag checks also accepted `--default-fstype=xfs` and
   `--handle-volume-inuse-error=false`. Packaging tests check these flags, the
   controller preflight without sidecars, digest/private-image settings,
@@ -228,7 +229,7 @@ SIGTERM removed CSI socket
 The gRPC probe exercised GetPluginInfo, Probe and NodeGetInfo through the Unix
 socket. The test namespace was deleted and `kubectl wait --for=delete` confirmed
 completion. This validates runtime startup, transport, identity and shutdown on
-the cluster; it does not validate a real Axo attachment or a QEMU/Ceph migration.
+the cluster; it does not validate a real backend attachment or a QEMU/Ceph migration.
 Local diagnostic notes are in the ignored `test-results/packaging-live-smoke.txt`.
 
 A further isolated test used the final driver with a real Kubernetes 1.36.3
@@ -247,17 +248,17 @@ CSINode while preserving existing drivers. The test namespace was also removed;
 a final API lookup confirmed its absence.
 
 This exercises kubelet and sidecar reconciliation against the real driver, but
-still uses a local Axo fixture, fresh loop devices and synthetic sysfs transport
-identity. It does not validate real Axo, Supernova, QEMU, Ceph or migration fencing.
+still uses a local backend fixture, fresh loop devices and synthetic sysfs transport
+identity. It does not validate a real backend, hypervisor, QEMU, Ceph or migration fencing.
 
 The separate `clever-priv` kernel variant follows the existing r100/r200
 wrappers and uses their shared configuration and installation hooks. Its three
 extra symbols (`SCSI_VIRTIO`, `HOTPLUG_PCI_ACPI`, `BLK_DEV_WRITE_MOUNTED`) were
-checked against the existing configuration. The Supernova hot-plug transport
-merged since (MR !168, 2026-10-15) needs `SCSI_VIRTIO` and `BLK_DEV_SD` and no
+checked against the existing configuration. The hypervisor hot-plug transport
+merged since (2026-10-15) needs `SCSI_VIRTIO` and `BLK_DEV_SD` and no
 PCI hotplug; `BLK_DEV_SD` has not been confirmed in the effective
 configuration. A full Exherbo Linux build, effective Kconfig validation,
 installation and KVM guest hotplug/resize remain release checks; these have not
-been run here, and Supernova exposes no resize instruction for hot-plugged
+been run here, and the hypervisor exposes no resize instruction for hot-plugged
 volumes, so the online-expansion gate has no backend path to validate against
 yet.

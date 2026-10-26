@@ -6,8 +6,8 @@
 {{- $_ := required "controller.clusterId is required" .Values.controller.clusterId -}}
 {{- $_ := required "controller.organisationId is required" .Values.controller.organisationId -}}
 {{- $_ := required "controller.existingSecret is required" .Values.controller.existingSecret -}}
-{{- if not (hasPrefix "https://" .Values.controller.axoUrl) -}}
-{{- fail "controller.axoUrl must use HTTPS" -}}
+{{- if not (hasPrefix "https://" .Values.controller.backendUrl) -}}
+{{- fail "controller.backendUrl must use HTTPS" -}}
 {{- end -}}
 {{- end -}}
 {{- if or (not (hasPrefix "/" .Values.node.idFile)) (not (hasPrefix "/" .Values.node.kubeletDirectory)) (not (hasPrefix "/" .Values.node.stateDirectory)) -}}

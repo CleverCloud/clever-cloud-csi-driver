@@ -24,7 +24,7 @@ class DeploymentContract(unittest.TestCase):
         self.assertFalse(node["automountServiceAccountToken"])
         self.assertEqual(node["terminationGracePeriodSeconds"], 210)
         expression = node["affinity"]["nodeAffinity"]["requiredDuringSchedulingIgnoredDuringExecution"]["nodeSelectorTerms"][0]["matchExpressions"][0]
-        self.assertEqual(expression, {"key": "clever-cloud.com/csi", "operator": "In", "values": ["supernova"]})
+        self.assertEqual(expression, {"key": "clever-cloud.com/csi", "operator": "In", "values": ["qemu"]})
         self.assertFalse(any("secret" in volume for volume in node["volumes"]))
         identity = next(v for v in node["volumes"] if v["name"] == "node-id")
         self.assertEqual(identity["hostPath"], {"path": "/etc/clever-csi/node-id", "type": "File"})
@@ -83,16 +83,16 @@ class DeploymentContract(unittest.TestCase):
             values_path = temporary / "charts/clever-csi-driver/values.yaml"
             values = yaml.safe_load(values_path.read_text())
             values["image"]["tag"] = "changed-default"
-            values["controller"]["axoUrl"] = "https://changed.example.test"
+            values["controller"]["backendUrl"] = "https://changed.example.test"
             values_path.write_text(yaml.safe_dump(values))
             with patch("render.ROOT", temporary):
                 for settings, tag, url in [({}, "changed-default", "https://changed.example.test"),
-                        ({"image_tag": "explicit", "axo_url": "https://explicit.example.test"}, "explicit", "https://explicit.example.test")]:
+                        ({"image_tag": "explicit", "backend_url": "https://explicit.example.test"}, "explicit", "https://explicit.example.test")]:
                     docs = render("attach", **settings)
                     deployment = next(doc for doc in docs if doc["kind"] == "Deployment")
                     driver = deployment["spec"]["template"]["spec"]["containers"][0]
                     self.assertTrue(driver["image"].endswith(":" + tag))
-                    self.assertIn("--axo-url=" + url, driver["args"])
+                    self.assertIn("--backend-url=" + url, driver["args"])
 
     def test_common_resources_remain_compatible_for_every_sidecar(self):
         common = {"requests": {"cpu": "75m", "memory": "192Mi"}, "limits": {"memory": "768Mi"}}
@@ -147,18 +147,18 @@ class DeploymentContract(unittest.TestCase):
             output = Path(directory) / "rendered"
             values_file.write_text(yaml.safe_dump({
                 "image": {"tag": "values-tag"},
-                "controller": {"axoUrl": "https://values.example.test"},
+                "controller": {"backendUrl": "https://values.example.test"},
                 "sidecarResourcesByRole": {"attacher": {"limits": {"memory": "1Gi"}}},
             }))
             command = ["python3", str(ROOT / "deploy/render.py"), "--output", str(output),
                        "--phase", "attach", "--values", str(values_file),
-                       "--image-tag", "flag-tag", "--axo-url", "https://flag.example.test"]
+                       "--image-tag", "flag-tag", "--backend-url", "https://flag.example.test"]
             subprocess.run(command, check=True, capture_output=True, text=True)
             self.assertEqual({path.name for path in output.iterdir()}, {"attach"})
             docs = [yaml.safe_load(path.read_text()) for path in (output / "attach").glob("*.yaml")]
             containers = next(doc for doc in docs if doc["kind"] == "Deployment")["spec"]["template"]["spec"]["containers"]
             self.assertTrue(containers[0]["image"].endswith(":flag-tag"))
-            self.assertIn("--axo-url=https://flag.example.test", containers[0]["args"])
+            self.assertIn("--backend-url=https://flag.example.test", containers[0]["args"])
             self.assertEqual(containers[1]["resources"]["limits"]["memory"], "1Gi")
             subprocess.run(command + ["--check"], check=True, capture_output=True, text=True)
 

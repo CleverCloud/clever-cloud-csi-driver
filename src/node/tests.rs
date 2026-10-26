@@ -1076,7 +1076,7 @@ fn serial_contract_is_exact_ascii_and_bounded_for_qemu() {
     for serial in ["a", "A_z-9", &"a".repeat(36)] {
         validate_serial(serial).unwrap();
     }
-    // Supernova's hot-plug volume id, which becomes the serial, admits no '.'.
+    // The hypervisor's hot-plug volume id, which becomes the serial, admits no '.'.
     for serial in [
         "",
         " abc",

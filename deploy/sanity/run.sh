@@ -14,7 +14,7 @@ cleanup() {
   [[ -z "$backend_pid" ]] || kill "$backend_pid" 2>/dev/null || true
   wait 2>/dev/null || true
   if (( status != 0 )); then
-    cat "$root/driver.log" "$root/axo.log" >&2 || true
+    cat "$root/driver.log" "$root/backend.log" >&2 || true
   fi
   # The outer runner removes this mount namespace, then recovers any owned loops
   # through their durable inode markers before deleting the scratch volume.
@@ -24,8 +24,8 @@ trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 cargo build --locked --example csi-sanity-server
-python3 /source/deploy/sanity/fake_axo.py --data "$root/data" --sys "$root/sys" \
-  --dev "$root/dev" --nodes sanity-vm --log "$root/axo-calls.jsonl" > "$root/axo.log" 2>&1 &
+python3 /source/deploy/sanity/fake_backend.py --data "$root/data" --sys "$root/sys" \
+  --dev "$root/dev" --nodes sanity-vm --log "$root/backend-calls.jsonl" > "$root/backend.log" 2>&1 &
 backend_pid=$!
 for attempt in {1..100}; do
   if python3 -c 'import urllib.request; urllib.request.urlopen(urllib.request.Request("http://127.0.0.1:18080/v4/kubernetes/organisations/orga-test/clusters/kubernetes-test/csi/capabilities", headers={"Authorization":"Bearer sanity-biscuit"}), timeout=1)' 2>/dev/null; then
@@ -35,7 +35,7 @@ for attempt in {1..100}; do
   sleep 0.1
 done
 "$CARGO_TARGET_DIR/debug/examples/csi-sanity-server" --endpoint "unix://$root/csi.sock" \
-  --axo-url http://127.0.0.1:18080 --token-file "$root/token" --state-dir "$root/state" \
+  --backend-url http://127.0.0.1:18080 --token-file "$root/token" --state-dir "$root/state" \
   --device-root "$root/dev" --sys-block-dir "$root/sys" --kubelet-root "$root/kubelet" \
   > "$root/driver.log" 2>&1 &
 driver_pid=$!

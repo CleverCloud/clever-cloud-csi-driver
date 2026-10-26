@@ -24,7 +24,7 @@ jobs:
       - uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4 # v4
         with:
           version: v3.19.0
-      - name: Check Helm and generated Axo bundles
+      - name: Check Helm and generated platform bundles
         run: |
           python3 -m pip install -r deploy/requirements.txt
           helm lint charts/clever-csi-driver
@@ -32,7 +32,7 @@ jobs:
           python3 deploy/test_packaging.py
           python3 deploy/render.py --check
           python3 deploy/test_api_contract.py
-          python3 -m openapi_spec_validator docs/axo-openapi-v1.yaml
+          python3 -m openapi_spec_validator docs/backend-openapi-v1.yaml
           python3 -m unittest discover -s deploy/sanity -p 'test_*.py'
   linux-mounts:
     needs: test
@@ -41,7 +41,7 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Exercise real XFS, ext4 and raw block on fresh loop devices
         run: bash deploy/test_linux.sh
-      - name: Run CSI conformance against isolated node and Axo fixtures
+      - name: Run CSI conformance against isolated node and backend fixtures
         run: bash deploy/test_linux.sh sanity
   image:
     needs: [test, linux-mounts]

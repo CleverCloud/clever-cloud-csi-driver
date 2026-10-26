@@ -43,8 +43,8 @@ spec:
             - --driver-name={{ .Values.driverName }}
             - --cluster-id={{ .Values.controller.clusterId }}
             - --organisation-id={{ .Values.controller.organisationId }}
-            - --axo-url={{ .Values.controller.axoUrl }}
-            - --axo-token-file=/etc/clever-csi/token
+            - --backend-url={{ .Values.controller.backendUrl }}
+            - --backend-token-file=/etc/clever-csi/token
             - --health-address=0.0.0.0:9808
           securityContext:
             allowPrivilegeEscalation: false

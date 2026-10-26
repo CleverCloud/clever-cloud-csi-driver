@@ -1,23 +1,23 @@
 > Current client protocol: `clever-csi-v1`. Restored from implementation baseline
 > `339e7f0` and updated with the required attachment transport guard. See the
-> [REST proposal](axo-api.md) for the separate target design.
+> [REST proposal](backend-api.md) for the separate target design.
 
-# Current Axo client contract (`clever-csi-v1`)
+# Current backend client contract (`clever-csi-v1`)
 
 **Status: client contract implemented and tested with an HTTP double; server
-implementation required in Axo. These endpoints are not present in the checked
-out Axo repository. They must pass the acceptance conditions below before this
-driver can replace ceph-csi.** No Axo or Supernova source is modified by this
+implementation required in the backend, which does not implement these endpoints
+yet. They must pass the acceptance conditions below before this
+driver can replace ceph-csi.** No backend or hypervisor source is modified by this
 repository.
 
-The machine-readable contract is [axo-openapi-v1.yaml](axo-openapi-v1.yaml). The CSI
+The machine-readable contract is [backend-openapi-v1.yaml](backend-openapi-v1.yaml). The CSI
 wire interface is the vendored CSI v1.12.0 protocol in `proto/csi.proto`.
 
 ## Ownership and existing conventions
 
-Existing Axo Kubernetes endpoints use
+Existing backend Kubernetes endpoints use
 `/v4/kubernetes/organisations/{owner_id}/clusters/{cluster_id}`
-(`axo/crates/api/kubernetes/src/controller.rs`, including the existing
+(served by the backend's Kubernetes API handlers, including the existing
 `.../csi/ceph` endpoint). Existing storage management uses tenant-scoped
 `/v4/tenants/{tenant_id}/...` endpoints, and compute lists VMs under
 `/v4/compute/virtual-machines`. Those existing endpoints do not implement the
@@ -30,15 +30,15 @@ The proposed cluster-scoped facade is:
 ```
 
 The facade authorizes the cluster, calls storage for image operations, and calls
-compute for attachment routing. Axo remains the sole authority for ownership,
-billing/adoption, RBD journal resolution, VM incarnations and fencing. Supernova
+compute for attachment routing. The backend remains the sole authority for ownership,
+billing/adoption, RBD journal resolution, VM incarnations and fencing. The hypervisor
 is not exposed to the CSI driver. Organisation and Kubernetes cluster IDs are
 distinct from Ceph's `clusterID` parameter.
 
 All handles are opaque JSON strings. The client does not parse legacy ceph-csi
 UUIDs, reconstruct RBD image names, concatenate a handle into a URL, or trust
 `volume_context` as proof of ownership. This also supports statically provisioned
-PV handles when Axo has an explicit, verified mapping for them.
+PV handles when the backend has an explicit, verified mapping for them.
 
 ## Authentication, transport and timeouts
 
@@ -49,19 +49,19 @@ PV handles when Axo has an explicit, verified mapping for them.
   token from an absolute file path for **each HTTP request**, so atomic file
   replacement rotates it without restarting the controller. Neither CSI Secret
   values nor Ceph credentials are forwarded. Token expiry, revocation and scope
-  verification belong to Axo, and must fail closed.
-- Axo must bind every requested volume, snapshot and VM to the authorized
+  verification belong to the backend, and must fail closed.
+- The backend must bind every requested volume, snapshot and VM to the authorized
   organisation and cluster. Caller-supplied Ceph pool/namespace/cluster metadata
   are hints to compare against the authoritative registry, never authority.
 - Redirects are disabled; the token must not move to a different origin.
 - A configured HTTP timeout (at most 600 seconds), the incoming gRPC timeout,
   and client disconnect/cancellation bound work in this process. Mutations are
   sent once, without an application retry loop. On ambiguous completion, the
-  next CSI retry asks Axo to reconcile the durable operation.
+  next CSI retry asks the backend to reconcile the durable operation.
 - HTTP timeout or gRPC cancellation is **not proof that backend work stopped**.
-  Axo must fence superseded jobs and reconcile an already completed mutation
+  The backend must fence superseded jobs and reconcile an already completed mutation
   rather than create another resource. A response must fit within 1 MiB.
-- No unfiltered Axo error text is returned to Kubernetes; it may contain an
+- No unfiltered backend error text is returned to Kubernetes; it may contain an
   upstream secret. Only documented status codes and fixed messages cross this
   boundary.
 
@@ -116,8 +116,8 @@ publish/unpublish including read-only, expansion, snapshot create/delete/list,
 and clone. It does not advertise GetCapacity, ListVolumes, ControllerGetVolume,
 ControllerModifyVolume, GetSnapshot, topology, RWX or SINGLE_NODE_MULTI_WRITER.
 Single-node writer and single-node reader-only access modes are accepted by
-the driver on the QEMU path, but until Supernova offers a read-only blockdev
-option (see the attachment section) Axo cannot honour `readonly: true` there:
+the driver on the QEMU path, but until the hypervisor offers a read-only blockdev
+option (see the attachment section) the backend cannot honour `readonly: true` there:
 it must refuse the request (`409`/`412`, `FAILED_PRECONDITION`) or route a
 permitted legacy request to `legacy-krbd`, and reader-only consumers stay on
 legacy nodes. Existing legacy attachments/expansion retain their established
@@ -146,7 +146,7 @@ After a writable filesystem stage, the Node plugin grows the existing filesystem
 to the guest device capacity before reporting success; this also covers a fresh
 PVC restored or cloned into a larger image without a separate `NodeExpandVolume`
 call. A read-only stage cannot perform that growth. Before making a clone/restore
-eligible for read-only attachment, Axo must therefore have grown and verified its
+eligible for read-only attachment, the backend must therefore have grown and verified its
 filesystem to the requested capacity under exclusive maintenance ownership.
 Growing only the RBD image is insufficient. Preserve the source contents and
 filesystem; growth never authorizes formatting an existing image.
@@ -166,7 +166,7 @@ optional `fs_type`, `format_policy: preformatted`, and optional `source`. Its
 immutable CSI context contains only mode, filesystem and format policy, never
 credentials. Existing ceph-csi handles remain unchanged throughout adoption.
 
-**The Node plugin never runs mkfs.** Axo's provisioning workflow must create and
+**The Node plugin never runs mkfs.** The backend's provisioning workflow must create and
 format new filesystem images in a controlled platform environment, under a
 durable exclusive allocation record, before the image is eligible for attach.
 Record the allocated RBD image identity and initialization attempt before any
@@ -207,7 +207,7 @@ Required CSI structure, metadata bounds and secret-value refusal apply to both
 routes. Node IDs are supplied by Kubernetes:
 
 - Historical ceph-csi nodes may identify themselves by a reusable Node name
-  (observed `manual-nodegroup-node0`). Axo must recognize them from its
+  (observed `manual-nodegroup-node0`). The backend must recognize them from its
   authoritative legacy pool registry and return `{"transport":"legacy-krbd"}`.
   This is a verified no-op: the existing ceph-csi plugin maps the volume. The
   controller returns an empty `publish_context`; it must not create a QEMU
@@ -217,11 +217,11 @@ routes. Node IDs are supplied by Kubernetes:
   QEMU attachment/adoption intent, or recorded fence forbidding legacy access.
   Native and adopted images must never return `legacy-krbd`, even for a legacy
   node or a legacy-only allowlist. Reject an incompatible route before mutation.
-- New nodes identify the **exact VM incarnation**. Axo must match that immutable
+- New nodes identify the **exact VM incarnation**. The backend must match that immutable
   identity to the cluster, pool and hypervisor. It must never convert a name or
   IP address into a QEMU attachment target. Missing, stale, duplicated or
   ambiguous VM identity is rejected. A replacement VM is a different identity.
-- Pool labels and caller hints alone are not authority. Axo must know whether a
+- Pool labels and caller hints alone are not authority. The backend must know whether a
   VM is using the legacy path, the new path or is being retired.
 
 For the new path, return a QEMU record only after the VM has the expected image
@@ -253,55 +253,55 @@ incarnation returns `FAILED_PRECONDITION` before any host operation.
 Kubernetes Node-name reuse must not make an old context valid on a replacement VM.
 
 This transport uses **QEMU `scsi-hd` over virtio-scsi**. `device_serial` is 1–36
-ASCII characters, matching `[A-Za-z0-9_-]{1,36}`: it is the Supernova hot-plug
+ASCII characters, matching `[A-Za-z0-9_-]{1,36}`: it is the hypervisor hot-plug
 volume id (`attach_volume` `volume.id`, used as both QEMU `serial` and
-`device_id`; Supernova MR !168 merged 2026-10-15, Axo `supernova-hv` port of
+`device_id`; hypervisor change merged 2026-10-15, matching backend change merged
 2026-10-16), and the hypervisor refuses any other character, including `.`.
-Axo must allocate a stable
+The backend must allocate a stable
 serial for the volume, ensure uniqueness among disks attached to the VM, and
 durably bind the serial to the volume and exact VM incarnation. Never reuse a
 serial for a different volume on that incarnation, even after detach, reboot,
 or registry cleanup: earlier CSI publish context can still be replayed.
-Current attachment uniqueness alone does not prevent stale-context reuse. Axo must
-verify the serial exposed in the guest. Axo and the controller require the exact
+Current attachment uniqueness alone does not prevent stale-context reuse. The backend must
+verify the serial exposed in the guest. The backend and the controller require the exact
 ASCII identifier: they never truncate, pad, change its case or derive it by
 shortening the opaque volume handle. The Node plugin may remove fixed-width
 transport padding and surrounding whitespace from guest attributes before
 comparison; it preserves the identifier's case and content, and rejects
 conflicting serial attributes or duplicate matching devices. Invalid or
-overlong Axo mutation responses fail with retryable `UNAVAILABLE`. The effect may
+overlong backend mutation responses fail with retryable `UNAVAILABLE`. The effect may
 already exist: the next CSI call reconciles it through the same identity/key.
 Malformed read responses remain `DATA_LOSS`. This contract does not support
 virtio-blk, whose 20-byte serial limit requires a separate transport contract.
 Volume handles keep their existing opaque format and are not subject to the
 serial character or length restrictions.
 
-The hypervisor primitive behind this transport is stateless. Supernova keeps no
+The hypervisor primitive behind this transport is stateless. The hypervisor keeps no
 attachment record across a VM stop, refuses a repeated `attach_volume` for an id
 already plugged, detaches with `device_del` without guest acknowledgement, takes
 no librbd lock and can plug the same image into another VM. Idempotent ensure,
 durable serial/incarnation binding, exclusivity and fencing therefore live in
-Axo, above that primitive. Supernova also refuses attachments to persistent VMs,
+the backend, above that primitive. The hypervisor also refuses attachments to persistent VMs,
 to VMs outside the `STARTING`, `DEPLOYING`, `READY` and `UP` states, to VMs
 booted without volume controllers, and beyond `hotplug_volumes.max_per_vm`
 (default and maximum 2048, the value the node reports as
-`max_volumes_per_node`). Axo maps the per-VM cap to `429`/`507` and the other
+`max_volumes_per_node`). The backend maps the per-VM cap to `429`/`507` and the other
 refusals to `409`/`412` under the table below, never to success.
 
-Read-only requests must be enforced by QEMU/Axo. On the QEMU path,
+Read-only requests must be enforced by QEMU and the backend. On the QEMU path,
 `SINGLE_NODE_READER_ONLY` requires `readonly: true`; a false flag on a reader-only
 legacy request is not permission to use QEMU. For filesystems, the effective guest mount remains
 read-only when any of the attachment, stage options, access mode or publication
 requires it; a publication with `readonly: false` cannot relax an existing
 read-only stage. For raw Block, a read-only bind mount does not prevent writes
 through the device special file. A read-only publication therefore requires
-both `readonly: true` from Axo and `blockdev --getro` reporting `1` in the guest.
+both `readonly: true` from the backend and `blockdev --getro` reporting `1` in the guest.
 The Node plugin rejects a read-only raw Block publication on a writable
 attachment and never changes the shared device's global read-only flag.
-Supernova's `attach_volume` has no read-only option (MR !168), so an Axo
+The hypervisor's `attach_volume` has no read-only option, so a backend
 implementation on the current hypervisor cannot honour `readonly: true` on the
 QEMU path: it must refuse such requests, or route a permitted reader-only legacy
-request to `legacy-krbd`, until Supernova gains a read-only blockdev option.
+request to `legacy-krbd`, until the hypervisor gains a read-only blockdev option.
 
 The minimum safe attachment transaction requires:
 
@@ -334,14 +334,14 @@ Platform VM retirement, including FORCE heal and scale-down, must durably record
 the retired incarnation and reconcile all its attachment intents and observed
 devices. Confirm destruction/isolation, revoke its exact Ceph sessions where
 needed, and release only locks proven to belong to that fenced incarnation.
-Persist and retry this cleanup across Axo/hypervisor restarts; an orphaned lock
+Persist and retry this cleanup across backend/hypervisor restarts; an orphaned lock
 must not require an unsafe manual unlock or be treated as proof of absence.
 A replacement VM must not inherit the old owner, serial mapping or completion.
 Until retirement and cleanup are proven, refuse a new writer and report the
 operation as pending or failed, never fabricate successful detach.
 
 Unpublish accepts `node_id: null` to mean all attachments for the volume, as CSI
-requires when node_id is omitted. Axo must enumerate authoritative incarnations
+requires when node_id is omitted. The backend must enumerate authoritative incarnations
 and verify completed detaches; it must not choose an arbitrary live VM by name.
 Legacy unpublish may be a no-op only after backend verification; it does not
 authorize a new QEMU writer until the old path is positively fenced.
@@ -350,7 +350,7 @@ authorize a new QEMU writer until the old path is positively fenced.
 
 Keys are **not an eternal response cache**. The sequence
 `attach(A) -> detach(A) -> attach(A)` repeats the attach key and must reattach on
-the third call. The client sends all three HTTP calls. Axo checks current desired
+the third call. The client sends all three HTTP calls. The backend checks current desired
 state and the current fenced generation rather than replaying old success.
 Similarly, a replayed delete must be scoped to the immutable image/snapshot
 identity and must not delete a new object created with a reused display name.
@@ -424,19 +424,19 @@ backend rejection statuses in the table below.
 ## Backend acceptance before rollout
 
 Contract tests in this repository prove client behavior, not backend fencing.
-The Axo implementation must additionally demonstrate crash/retry convergence,
+The backend implementation must additionally demonstrate crash/retry convergence,
 simultaneous attach/delete/expand serialization, stale-epoch rejection, VM twins
 refusal, old-node legacy routing, real QEMU attach/detach acknowledgement,
 Ceph credential isolation, preformat crash recovery without data loss, preserved
 legacy image/snapshot identity, exact-once adoption billing, snapshot restore
 and clone integrity, and monotonic online expansion including guest rescans.
-Run those tests with real Supernova and Ceph before an attachment takeover, on
+Run those tests with a real hypervisor and Ceph before an attachment takeover, on
 a hypervisor where `hotplug_volumes.enabled` was set before the test VMs booted
-and whose QEMU supports `iothread-vq-mapping` (QEMU 10 or later). Supernova
-exposes no resize instruction for hot-plugged volumes (MR !168 offers
-`attach_volume` and `detach_volume` only), so Axo cannot yet perform the QEMU
+and whose QEMU supports `iothread-vq-mapping` (QEMU 10 or later). The hypervisor
+exposes no resize instruction for hot-plugged volumes (it offers
+`attach_volume` and `detach_volume` only), so the backend cannot yet perform the QEMU
 capacity update this contract requires. Online expansion of QEMU volumes stays
-gated until Supernova provides that instruction and the test shows the grown
+gated until the hypervisor provides that instruction and the test shows the grown
 capacity reported by QEMU and visible to the guest after a rescan; a grown RBD
 image that happens to become visible without that step does not close the gate.
 

@@ -1,5 +1,5 @@
 //! CSI controller: validates Kubernetes requests and delegates storage ownership
-//! and fencing to the proposed Axo API. Handles are opaque and never decoded.
+//! and fencing to the proposed backend API. Handles are opaque and never decoded.
 
 use std::{
     collections::{BTreeMap, HashMap},
@@ -9,23 +9,23 @@ use std::{
 use reqwest::Method;
 use tonic::{Request, Response, Status};
 
-pub use crate::axo::ControllerConfig;
-use crate::{axo, csi};
+pub use crate::backend::ControllerConfig;
+use crate::{backend, csi};
 
 #[derive(Clone)]
 pub struct CsiController {
-    axo: axo::AxoClient,
+    backend: backend::BackendClient,
 }
 
 impl CsiController {
     pub fn new(config: ControllerConfig) -> Result<Self, Status> {
         Ok(Self {
-            axo: axo::AxoClient::new(config)?,
+            backend: backend::BackendClient::new(config)?,
         })
     }
 
     pub async fn ready(&self) -> Result<(), Status> {
-        self.axo.ready().await
+        self.backend.ready().await
     }
 }
 
@@ -60,7 +60,7 @@ impl csi::controller_server::Controller for CsiController {
             .volume_content_source
             .map(content_source)
             .transpose()?;
-        let body = axo::EnsureVolume {
+        let body = backend::EnsureVolume {
             name: request.name,
             required_bytes,
             limit_bytes,
@@ -68,8 +68,8 @@ impl csi::controller_server::Controller for CsiController {
             parameters,
             source: source.clone(),
         };
-        let record: axo::VolumeRecord = self
-            .axo
+        let record: backend::VolumeRecord = self
+            .backend
             .json(
                 Method::POST,
                 "volumes",
@@ -78,12 +78,12 @@ impl csi::controller_server::Controller for CsiController {
                 deadline,
             )
             .await?;
-        validate_record(&record).map_err(|_| axo::invalid_mutation_response("volumes"))?;
+        validate_record(&record).map_err(|_| backend::invalid_mutation_response("volumes"))?;
         if record.shape != shape || record.source != source {
-            return Err(axo::invalid_mutation_response("volumes"));
+            return Err(backend::invalid_mutation_response("volumes"));
         }
         validate_capacity(record.capacity_bytes, required_bytes, limit_bytes)
-            .map_err(|_| axo::invalid_mutation_response("volumes"))?;
+            .map_err(|_| backend::invalid_mutation_response("volumes"))?;
         Ok(Response::new(csi::CreateVolumeResponse {
             volume: Some(volume(record)),
         }))
@@ -96,10 +96,10 @@ impl csi::controller_server::Controller for CsiController {
         let deadline = deadline(&request)?;
         let request = request.into_inner();
         identifier(&request.volume_id, "volume_id")?;
-        let body = axo::VolumeId {
+        let body = backend::VolumeId {
             volume_id: request.volume_id,
         };
-        self.axo
+        self.backend
             .delete("volumes/delete", &body, &[&body.volume_id], deadline)
             .await?;
         Ok(Response::new(csi::DeleteVolumeResponse {}))
@@ -120,7 +120,7 @@ impl csi::controller_server::Controller for CsiController {
             .ok_or_else(|| Status::invalid_argument("volume_capability is required"))?;
         required_capability_fields(cap)?;
         // Historical ceph-csi nodes can support capabilities our QEMU Node
-        // service cannot. Only Axo knows the route: constrain the atomic backend
+        // service cannot. Only the backend knows the route: constrain the atomic backend
         // operation instead of rejecting these volumes before classification.
         let volume_context = storage_metadata(request.volume_context.clone())?;
         let qemu_shape = capability(cap).and_then(|shape| {
@@ -139,20 +139,20 @@ impl csi::controller_server::Controller for CsiController {
             validate_parameter_filesystem(&volume_context, &shape)?;
             Ok(shape)
         });
-        let mut allowed_transports = vec![axo::AttachmentTransport::LegacyKrbd];
+        let mut allowed_transports = vec![backend::AttachmentTransport::LegacyKrbd];
         let shape = match qemu_shape {
             Ok(shape) => {
-                allowed_transports.push(axo::AttachmentTransport::Qemu);
+                allowed_transports.push(backend::AttachmentTransport::Qemu);
                 shape
             }
             Err(_) => existing_capability_shape(cap)?,
         };
         // Fail closed if an older backend could silently ignore the allowlist.
         // Do not cache this across a backend deployment or a routing change.
-        self.axo
+        self.backend
             .ready_with_deadline(deadline.map(|limit| limit.saturating_sub(started.elapsed())))
             .await?;
-        let body = axo::EnsureAttachment {
+        let body = backend::EnsureAttachment {
             volume_id: request.volume_id,
             node_id: request.node_id,
             readonly: request.readonly,
@@ -160,8 +160,8 @@ impl csi::controller_server::Controller for CsiController {
             shape: shape.clone(),
             volume_context,
         };
-        let attachment: axo::AttachmentRecord = self
-            .axo
+        let attachment: backend::AttachmentRecord = self
+            .backend
             .json(
                 Method::POST,
                 "attachments",
@@ -171,8 +171,8 @@ impl csi::controller_server::Controller for CsiController {
             )
             .await?;
         let publish_context = match attachment {
-            axo::AttachmentRecord::LegacyKrbd => HashMap::new(),
-            axo::AttachmentRecord::Qemu {
+            backend::AttachmentRecord::LegacyKrbd => HashMap::new(),
+            backend::AttachmentRecord::Qemu {
                 volume_id,
                 node_id,
                 device_serial,
@@ -182,14 +182,14 @@ impl csi::controller_server::Controller for CsiController {
             } => {
                 if !body
                     .allowed_transports
-                    .contains(&axo::AttachmentTransport::Qemu)
+                    .contains(&backend::AttachmentTransport::Qemu)
                     || actual != shape
                     || format_policy != "preformatted"
                     || readonly != body.readonly
                     || volume_id != body.volume_id
                     || node_id != body.node_id
                 {
-                    return Err(axo::invalid_mutation_response("attachments"));
+                    return Err(backend::invalid_mutation_response("attachments"));
                 }
                 if device_serial.is_empty()
                     || device_serial.len() > 36
@@ -197,7 +197,7 @@ impl csi::controller_server::Controller for CsiController {
                         .bytes()
                         .all(|b| b.is_ascii_alphanumeric() || b"_-".contains(&b))
                 {
-                    return Err(axo::invalid_mutation_response("attachments"));
+                    return Err(backend::invalid_mutation_response("attachments"));
                 }
                 let mut context = shape_context(&shape);
                 context.insert("node_id".into(), node_id);
@@ -224,11 +224,11 @@ impl csi::controller_server::Controller for CsiController {
             node_id(&request.node_id)?;
             Some(request.node_id)
         };
-        let body = axo::DeleteAttachment {
+        let body = backend::DeleteAttachment {
             volume_id: request.volume_id,
             node_id: target,
         };
-        self.axo
+        self.backend
             .delete(
                 "attachments/delete",
                 &body,
@@ -271,18 +271,20 @@ impl csi::controller_server::Controller for CsiController {
         let parameters = storage_parameters(request.parameters.clone())?;
         validate_parameter_filesystem(&context, &shape)?;
         validate_parameter_filesystem(&parameters, &shape)?;
-        let body = axo::ResolveVolume {
+        let body = backend::ResolveVolume {
             volume_id: request.volume_id,
             volume_context: context,
             parameters,
         };
-        let record: axo::VolumeRecord = self
-            .axo
+        let record: backend::VolumeRecord = self
+            .backend
             .json(Method::POST, "volumes/resolve", &body, None, deadline)
             .await?;
         validate_record(&record)?;
         if record.volume_id != body.volume_id {
-            return Err(Status::data_loss("Axo changed an opaque volume identity"));
+            return Err(Status::data_loss(
+                "backend changed an opaque volume identity",
+            ));
         }
         if record.shape != shape {
             return Ok(Response::new(csi::ValidateVolumeCapabilitiesResponse {
@@ -314,14 +316,14 @@ impl csi::controller_server::Controller for CsiController {
             .map(existing_capability_shape)
             .transpose()?;
         let (required_bytes, limit_bytes) = capacity(request.capacity_range.as_ref(), true)?;
-        let body = axo::ExpandVolume {
+        let body = backend::ExpandVolume {
             volume_id: request.volume_id,
             required_bytes,
             limit_bytes,
             expected_shape: requested_shape.clone(),
         };
-        let record: axo::VolumeRecord = self
-            .axo
+        let record: backend::VolumeRecord = self
+            .backend
             .json(
                 Method::POST,
                 "volumes/expand",
@@ -335,7 +337,7 @@ impl csi::controller_server::Controller for CsiController {
             )
             .await?;
         validate_existing_record(&record)
-            .map_err(|_| axo::invalid_mutation_response("volumes/expand"))?;
+            .map_err(|_| backend::invalid_mutation_response("volumes/expand"))?;
         if record.volume_id != body.volume_id
             || requested_shape.as_ref().is_some_and(|shape| {
                 shape.volume_mode != record.shape.volume_mode
@@ -345,10 +347,10 @@ impl csi::controller_server::Controller for CsiController {
                         .is_some_and(|fs| Some(fs) != record.shape.fs_type.as_ref())
             })
         {
-            return Err(axo::invalid_mutation_response("volumes/expand"));
+            return Err(backend::invalid_mutation_response("volumes/expand"));
         }
         validate_capacity(record.capacity_bytes, required_bytes, limit_bytes)
-            .map_err(|_| axo::invalid_mutation_response("volumes/expand"))?;
+            .map_err(|_| backend::invalid_mutation_response("volumes/expand"))?;
         Ok(Response::new(csi::ControllerExpandVolumeResponse {
             capacity_bytes: record.capacity_bytes,
             // Raw Block also needs the guest's SCSI rescan before its larger
@@ -365,13 +367,13 @@ impl csi::controller_server::Controller for CsiController {
         let request = request.into_inner();
         object_name(&request.name)?;
         identifier(&request.source_volume_id, "source_volume_id")?;
-        let body = axo::EnsureSnapshot {
+        let body = backend::EnsureSnapshot {
             name: request.name,
             source_volume_id: request.source_volume_id,
             parameters: storage_parameters(request.parameters)?,
         };
-        let record: axo::SnapshotRecord = self
-            .axo
+        let record: backend::SnapshotRecord = self
+            .backend
             .json(
                 Method::POST,
                 "snapshots",
@@ -381,11 +383,11 @@ impl csi::controller_server::Controller for CsiController {
             )
             .await?;
         if record.source_volume_id != body.source_volume_id {
-            return Err(axo::invalid_mutation_response("snapshots"));
+            return Err(backend::invalid_mutation_response("snapshots"));
         }
         Ok(Response::new(csi::CreateSnapshotResponse {
             snapshot: Some(
-                snapshot(record).map_err(|_| axo::invalid_mutation_response("snapshots"))?,
+                snapshot(record).map_err(|_| backend::invalid_mutation_response("snapshots"))?,
             ),
         }))
     }
@@ -397,10 +399,10 @@ impl csi::controller_server::Controller for CsiController {
         let deadline = deadline(&request)?;
         let request = request.into_inner();
         identifier(&request.snapshot_id, "snapshot_id")?;
-        let body = axo::SnapshotId {
+        let body = backend::SnapshotId {
             snapshot_id: request.snapshot_id,
         };
-        self.axo
+        self.backend
             .delete("snapshots/delete", &body, &[&body.snapshot_id], deadline)
             .await?;
         Ok(Response::new(csi::DeleteSnapshotResponse {}))
@@ -426,14 +428,14 @@ impl csi::controller_server::Controller for CsiController {
         if request.starting_token.len() > 8192 {
             return Err(Status::aborted("invalid snapshot pagination token"));
         }
-        let body = axo::ListSnapshots {
+        let body = backend::ListSnapshots {
             snapshot_id: nonempty(request.snapshot_id),
             source_volume_id: nonempty(request.source_volume_id),
             starting_token: nonempty(request.starting_token),
             max_entries: request.max_entries,
         };
-        let page: axo::SnapshotPage = self
-            .axo
+        let page: backend::SnapshotPage = self
+            .backend
             .json(Method::POST, "snapshots/list", &body, None, deadline)
             .await?;
         if (body.max_entries > 0 && page.entries.len() > body.max_entries as usize)
@@ -442,7 +444,9 @@ impl csi::controller_server::Controller for CsiController {
                 .as_ref()
                 .is_some_and(|token| token.len() > 8192)
         {
-            return Err(Status::data_loss("Axo returned an invalid snapshot page"));
+            return Err(Status::data_loss(
+                "backend returned an invalid snapshot page",
+            ));
         }
         let mut entries = Vec::with_capacity(page.entries.len());
         for record in page.entries {
@@ -456,7 +460,7 @@ impl csi::controller_server::Controller for CsiController {
                     .is_some_and(|id| id != &record.source_volume_id)
             {
                 return Err(Status::data_loss(
-                    "Axo snapshot page does not match requested filters",
+                    "backend snapshot page does not match requested filters",
                 ));
             }
             entries.push(csi::list_snapshots_response::Entry {
@@ -578,7 +582,7 @@ fn node_id(value: &str) -> Result<(), Status> {
     }
 }
 
-fn capability(cap: &csi::VolumeCapability) -> Result<axo::VolumeShape, Status> {
+fn capability(cap: &csi::VolumeCapability) -> Result<backend::VolumeShape, Status> {
     use csi::volume_capability::{AccessType, access_mode::Mode};
     required_capability_fields(cap)?;
     if !cap.access_mode.as_ref().is_some_and(|mode| {
@@ -593,8 +597,8 @@ fn capability(cap: &csi::VolumeCapability) -> Result<axo::VolumeShape, Status> {
         ));
     }
     match &cap.access_type {
-        Some(AccessType::Block(_)) => Ok(axo::VolumeShape {
-            volume_mode: axo::VolumeMode::Block,
+        Some(AccessType::Block(_)) => Ok(backend::VolumeShape {
+            volume_mode: backend::VolumeMode::Block,
             fs_type: None,
         }),
         Some(AccessType::Mount(mount)) => {
@@ -614,8 +618,8 @@ fn capability(cap: &csi::VolumeCapability) -> Result<axo::VolumeShape, Status> {
                 ));
             }
             validate_mount_flags(&mount.mount_flags, fs_type)?;
-            Ok(axo::VolumeShape {
-                volume_mode: axo::VolumeMode::Filesystem,
+            Ok(backend::VolumeShape {
+                volume_mode: backend::VolumeMode::Filesystem,
                 fs_type: Some(fs_type.into()),
             })
         }
@@ -627,17 +631,17 @@ fn capability(cap: &csi::VolumeCapability) -> Result<axo::VolumeShape, Status> {
 
 /// Shape of an existing volume, without the restrictions of our QEMU Node
 /// implementation. Empty filesystem means unspecified, not an XFS conversion.
-fn existing_capability_shape(cap: &csi::VolumeCapability) -> Result<axo::VolumeShape, Status> {
+fn existing_capability_shape(cap: &csi::VolumeCapability) -> Result<backend::VolumeShape, Status> {
     use csi::volume_capability::AccessType;
     required_capability_fields(cap)?;
     Ok(
         match cap.access_type.as_ref().expect("validated access type") {
-            AccessType::Block(_) => axo::VolumeShape {
-                volume_mode: axo::VolumeMode::Block,
+            AccessType::Block(_) => backend::VolumeShape {
+                volume_mode: backend::VolumeMode::Block,
                 fs_type: None,
             },
-            AccessType::Mount(mount) => axo::VolumeShape {
-                volume_mode: axo::VolumeMode::Filesystem,
+            AccessType::Mount(mount) => backend::VolumeShape {
+                volume_mode: backend::VolumeMode::Filesystem,
                 fs_type: (!mount.fs_type.is_empty()).then(|| mount.fs_type.clone()),
             },
         },
@@ -699,7 +703,7 @@ fn validate_mount_flags(flags: &[String], fs_type: &str) -> Result<(), Status> {
     Ok(())
 }
 
-fn capabilities(caps: &[csi::VolumeCapability]) -> Result<axo::VolumeShape, Status> {
+fn capabilities(caps: &[csi::VolumeCapability]) -> Result<backend::VolumeShape, Status> {
     let first = caps
         .first()
         .ok_or_else(|| Status::invalid_argument("volume_capabilities is required"))?;
@@ -731,7 +735,7 @@ fn capacity(
         return Err(Status::invalid_argument("invalid capacity range"));
     }
     // 1 GiB when unconstrained; if a caller supplies only a smaller upper bound,
-    // allow Axo to select a fitting positive capacity instead of violating it.
+    // allow the backend to select a fitting positive capacity instead of violating it.
     let lower = if lower == 0 {
         if upper > 0 {
             upper.min(1 << 30)
@@ -747,23 +751,23 @@ fn capacity(
 fn validate_capacity(actual: i64, lower: i64, upper: Option<i64>) -> Result<(), Status> {
     if actual < lower || upper.is_some_and(|upper| actual > upper) {
         Err(Status::out_of_range(
-            "Axo volume capacity does not satisfy requested range",
+            "backend volume capacity does not satisfy requested range",
         ))
     } else {
         Ok(())
     }
 }
 
-fn content_source(source: csi::VolumeContentSource) -> Result<axo::ContentSource, Status> {
+fn content_source(source: csi::VolumeContentSource) -> Result<backend::ContentSource, Status> {
     use csi::volume_content_source::Type;
     match source.r#type {
         Some(Type::Snapshot(source)) => {
             identifier(&source.snapshot_id, "snapshot_id")?;
-            Ok(axo::ContentSource::Snapshot(source.snapshot_id))
+            Ok(backend::ContentSource::Snapshot(source.snapshot_id))
         }
         Some(Type::Volume(source)) => {
             identifier(&source.volume_id, "source volume_id")?;
-            Ok(axo::ContentSource::Volume(source.volume_id))
+            Ok(backend::ContentSource::Volume(source.volume_id))
         }
         None => Err(Status::invalid_argument(
             "volume_content_source type is required",
@@ -771,10 +775,10 @@ fn content_source(source: csi::VolumeContentSource) -> Result<axo::ContentSource
     }
 }
 
-fn shape_context(shape: &axo::VolumeShape) -> HashMap<String, String> {
+fn shape_context(shape: &backend::VolumeShape) -> HashMap<String, String> {
     let mode = match shape.volume_mode {
-        axo::VolumeMode::Block => "block",
-        axo::VolumeMode::Filesystem => "filesystem",
+        backend::VolumeMode::Block => "block",
+        backend::VolumeMode::Filesystem => "filesystem",
     };
     let mut context = HashMap::from([
         ("volume_mode".into(), mode.into()),
@@ -786,43 +790,43 @@ fn shape_context(shape: &axo::VolumeShape) -> HashMap<String, String> {
     context
 }
 
-fn validate_record(record: &axo::VolumeRecord) -> Result<(), Status> {
+fn validate_record(record: &backend::VolumeRecord) -> Result<(), Status> {
     validate_existing_record(record)?;
     if record.format_policy != "preformatted"
-        || record.shape.volume_mode == axo::VolumeMode::Filesystem
+        || record.shape.volume_mode == backend::VolumeMode::Filesystem
             && !matches!(record.shape.fs_type.as_deref(), Some("xfs" | "ext4"))
     {
-        return Err(Status::data_loss("invalid Axo volume metadata"));
+        return Err(Status::data_loss("invalid backend volume metadata"));
     }
     Ok(())
 }
 
-fn validate_existing_record(record: &axo::VolumeRecord) -> Result<(), Status> {
-    identifier(&record.volume_id, "Axo volume_id")
-        .map_err(|_| Status::data_loss("invalid Axo volume identity"))?;
+fn validate_existing_record(record: &backend::VolumeRecord) -> Result<(), Status> {
+    identifier(&record.volume_id, "backend volume_id")
+        .map_err(|_| Status::data_loss("invalid backend volume identity"))?;
     if record.capacity_bytes <= 0
         || match record.shape.volume_mode {
-            axo::VolumeMode::Block => record.shape.fs_type.is_some(),
-            axo::VolumeMode::Filesystem => record
+            backend::VolumeMode::Block => record.shape.fs_type.is_some(),
+            backend::VolumeMode::Filesystem => record
                 .shape
                 .fs_type
                 .as_ref()
                 .is_none_or(|fs| fs.is_empty() || fs.chars().any(char::is_control)),
         }
     {
-        return Err(Status::data_loss("invalid Axo volume metadata"));
+        return Err(Status::data_loss("invalid backend volume metadata"));
     }
     Ok(())
 }
 
-fn volume(record: axo::VolumeRecord) -> csi::Volume {
+fn volume(record: backend::VolumeRecord) -> csi::Volume {
     use csi::volume_content_source::{SnapshotSource, Type, VolumeSource};
     let content_source = record.source.map(|source| csi::VolumeContentSource {
         r#type: Some(match source {
-            axo::ContentSource::Snapshot(snapshot_id) => {
+            backend::ContentSource::Snapshot(snapshot_id) => {
                 Type::Snapshot(SnapshotSource { snapshot_id })
             }
-            axo::ContentSource::Volume(volume_id) => Type::Volume(VolumeSource { volume_id }),
+            backend::ContentSource::Volume(volume_id) => Type::Volume(VolumeSource { volume_id }),
         }),
     });
     csi::Volume {
@@ -834,16 +838,16 @@ fn volume(record: axo::VolumeRecord) -> csi::Volume {
     }
 }
 
-fn snapshot(record: axo::SnapshotRecord) -> Result<csi::Snapshot, Status> {
+fn snapshot(record: backend::SnapshotRecord) -> Result<csi::Snapshot, Status> {
     identifier(&record.snapshot_id, "snapshot_id")
-        .map_err(|_| Status::data_loss("invalid Axo snapshot identity"))?;
+        .map_err(|_| Status::data_loss("invalid backend snapshot identity"))?;
     identifier(&record.source_volume_id, "source_volume_id")
-        .map_err(|_| Status::data_loss("invalid Axo snapshot source"))?;
+        .map_err(|_| Status::data_loss("invalid backend snapshot source"))?;
     if record.size_bytes < 0
         || !(0..1_000_000_000).contains(&record.creation_time_nanos)
         || !(-62_135_596_800..=253_402_300_799).contains(&record.creation_time_seconds)
     {
-        return Err(Status::data_loss("invalid Axo snapshot metadata"));
+        return Err(Status::data_loss("invalid backend snapshot metadata"));
     }
     Ok(csi::Snapshot {
         size_bytes: record.size_bytes,
@@ -858,7 +862,7 @@ fn snapshot(record: axo::SnapshotRecord) -> Result<csi::Snapshot, Status> {
     })
 }
 
-/// Existing Ceph fields are routing hints only; Axo MUST compare them with the
+/// Existing Ceph fields are routing hints only; the backend MUST compare them with the
 /// cluster's authoritative journal and storage policy. Never forward CSI secrets.
 fn storage_parameters(values: HashMap<String, String>) -> Result<BTreeMap<String, String>, Status> {
     let values = storage_metadata(values)?;
@@ -907,7 +911,7 @@ fn storage_metadata(values: HashMap<String, String>) -> Result<BTreeMap<String, 
 
 fn validate_parameter_filesystem(
     values: &BTreeMap<String, String>,
-    shape: &axo::VolumeShape,
+    shape: &backend::VolumeShape,
 ) -> Result<(), Status> {
     for key in ["fs_type", "fsType", "fstype", "csi.storage.k8s.io/fstype"] {
         if let Some(fs_type) = values.get(key).filter(|value| !value.is_empty())
@@ -920,7 +924,7 @@ fn validate_parameter_filesystem(
     }
     if values.get("volume_mode").is_some_and(|value| {
         value
-            != if shape.volume_mode == axo::VolumeMode::Block {
+            != if shape.volume_mode == backend::VolumeMode::Block {
                 "block"
             } else {
                 "filesystem"

@@ -46,7 +46,7 @@
         "organisationId": {
           "type": "string"
         },
-        "axoUrl": {
+        "backendUrl": {
           "type": "string",
           "pattern": "^https://[^ ]+$"
         },

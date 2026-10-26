@@ -1,17 +1,17 @@
 openapi: 3.1.0
 info:
-  title: Current Axo CSI client contract
+  title: Current backend CSI client contract
   version: clever-csi-v1
   description: >-
     Current clever-csi-v1 contract consumed by clever-csi-driver, including the
-    attachment.allowed-transports guard. These routes are not implemented by
-    the existing Axo repository. See axo-api-v1.md for mandatory
+    attachment.allowed-transports guard. The backend does not implement
+    these routes yet. See backend-api-v1.md for mandatory
     ownership, durable idempotency, fencing, adoption and formatting semantics.
     HTTP 202 is not completion. Success must represent verified postconditions.
     Invalid mutation success bodies map to retryable UNAVAILABLE with the same
     reconciliation identity; malformed read responses map to DATA_LOSS.
 servers:
-  - url: https://axo.example.invalid/v4/kubernetes/organisations/{organisation_id}/clusters/{cluster_id}/csi
+  - url: https://backend.example.invalid/v4/kubernetes/organisations/{organisation_id}/clusters/{cluster_id}/csi
     variables:
       organisation_id: {default: orga-example}
       cluster_id: {default: kubernetes-example}
@@ -36,7 +36,7 @@ paths:
       description: >-
         Preserve source data and filesystem. Writable NodeStage grows the
         existing filesystem to guest device capacity before success. Before
-        read-only clone/restore attachment eligibility, Axo must grow and verify
+        read-only clone/restore attachment eligibility, the backend must grow and verify
         the filesystem to the requested capacity under exclusive maintenance
         ownership; image growth alone is insufficient. Never reformat a source
         or adopted image to satisfy a growth request.
@@ -275,7 +275,7 @@ components:
       type: http
       scheme: bearer
       bearerFormat: Biscuit
-      description: Cluster-scoped capability, verified by Axo on every operation
+      description: Cluster-scoped capability, verified by the backend on every operation
   parameters:
     IdempotencyKey:
       name: Idempotency-Key
@@ -296,7 +296,7 @@ components:
       description: Target resource is absent after verified completion
     Error:
       description: >-
-        See axo-api-v1.md status mapping. Only 404 with code
+        See backend-api-v1.md status mapping. Only 404 with code
         clever.csi.resource-not-found indicates a missing owned resource and
         permits idempotent delete success. A missing route must use another
         code. Human error messages are not forwarded by the CSI client.
@@ -350,7 +350,7 @@ components:
       description: >-
         Existing-volume shape for legacy routing and expansion; does not restrict
         filesystems to XFS/ext4. An absent/null fs_type on a filesystem request
-        means unspecified. Block requests have no filesystem. Axo validates shape
+        means unspecified. Block requests have no filesystem. The backend validates shape
         against the authoritative record before any mutation.
     ExpandedVolumeRecord:
       allOf:
@@ -437,7 +437,7 @@ components:
                   pattern: '^[A-Za-z0-9_-]{1,36}(?![\s\S])'
                   description: >-
                     Exact ASCII serial of the QEMU scsi-hd device exposed over
-                    virtio-scsi: the Supernova hot-plug volume id, which admits
+                    virtio-scsi: the hypervisor hot-plug volume id, which admits
                     no other character. Stable for this volume and unique among disks
                     attached to the VM. Durably bind it to this volume and exact
                     incarnation; never reuse it for another volume on that
@@ -447,7 +447,7 @@ components:
                 readonly:
                   type: boolean
                   description: >-
-                    Read-only policy already enforced by Axo/QEMU. For raw
+                    Read-only policy already enforced by the backend and QEMU. For raw
                     Block read-only publication, the guest must also report
                     blockdev --getro as 1; a read-only device bind mount alone
                     does not prevent writes to a special file.

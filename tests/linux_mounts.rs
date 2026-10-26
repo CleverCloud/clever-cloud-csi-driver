@@ -6,7 +6,7 @@
 //!
 //! The block devices and filesystems are real, newly allocated loop devices.
 //! Only serial discovery uses a synthetic sysfs VPD80 fixture: this is NOT a
-//! QEMU/Supernova attachment test. No existing storage device is formatted.
+//! QEMU/hypervisor attachment test. No existing storage device is formatted.
 
 use std::{
     collections::HashMap,

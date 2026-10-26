@@ -1,4 +1,4 @@
-//! Linux CSI node service. Axo supplies preformatted devices; this module never
+//! Linux CSI node service. The backend supplies preformatted devices; this module never
 //! formats a disk and never talks to the cloud or to Ceph.
 mod host;
 #[cfg(test)]
@@ -33,7 +33,7 @@ pub struct NodeConfig {
     pub sys_block_dir: PathBuf,
     pub kubelet_root: PathBuf,
     /// Volumes `NodeGetInfo` advertises as attachable to this VM, 1 to 2048.
-    /// Supernova caps hot-plugged volumes per VM at 2048
+    /// The hypervisor caps hot-plugged volumes per VM at 2048
     /// (`hotplug_volumes.max_per_vm`). 0 is refused: CSI reads it as "no
     /// limit", which never describes a hypervisor cap.
     pub max_volumes_per_node: i64,
@@ -160,7 +160,7 @@ fn validate_volume_id(value: &str) -> Result<(), Status> {
     Ok(())
 }
 
-/// Supernova addresses hot-plugged volumes on 8 virtio-scsi controllers and
+/// The hypervisor addresses hot-plugged volumes on 8 virtio-scsi controllers and
 /// caps `hotplug_volumes.max_per_vm` at this value.
 pub const MAX_VOLUMES_PER_VM: i64 = 2048;
 
@@ -285,7 +285,7 @@ fn spec(
     }
     if context.get("format_policy").map(String::as_str) != Some("preformatted") {
         return Err(Status::failed_precondition(
-            "Axo must provide format_policy=preformatted; node formatting is forbidden",
+            "backend must provide format_policy=preformatted; node formatting is forbidden",
         ));
     }
     let readonly = match context.get("readonly").map(String::as_str) {

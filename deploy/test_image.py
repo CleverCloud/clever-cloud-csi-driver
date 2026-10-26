@@ -46,7 +46,7 @@ def smoke(image):
             else:
                 args += ["--user", "65532:65532", "--mount", f"type=bind,src={token},dst=/token,readonly"]
                 cli += ["--organisation-id=orga_test", "--cluster-id=kubernetes_test",
-                        "--axo-url=https://127.0.0.1:1", "--axo-token-file=/token"]
+                        "--backend-url=https://127.0.0.1:1", "--backend-token-file=/token"]
             container = docker(*args, image, *cli).stdout.strip()
             try:
                 port = docker("port", container, "9808/tcp").stdout.strip().rsplit(":", 1)[1]

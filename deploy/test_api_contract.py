@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate the proposed Axo contract and its positive/negative schema fixtures."""
+"""Validate the proposed backend contract and its positive/negative schema fixtures."""
 import argparse
 import json
 from pathlib import Path
@@ -46,8 +46,8 @@ UniqueLoader.add_constructor(yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG, uni
 def main():
     parser = argparse.ArgumentParser()
     root = Path(__file__).resolve().parents[1]
-    parser.add_argument("document", type=Path, nargs="?", default=root / "docs/axo-openapi.yaml")
-    parser.add_argument("--cases", type=Path, default=root / "deploy/fixtures/axo-contract.json",
+    parser.add_argument("document", type=Path, nargs="?", default=root / "docs/backend-openapi.yaml")
+    parser.add_argument("--cases", type=Path, default=root / "deploy/fixtures/backend-contract.json",
         help="JSON array: {label, schema, valid, value}")
     args = parser.parse_args()
     document = yaml.load(args.document.read_text(), Loader=UniqueLoader)

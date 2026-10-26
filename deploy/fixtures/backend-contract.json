@@ -348,7 +348,7 @@
     "valid": false
   },
   {
-    "label": "device serial outside the Supernova hot-plug id charset",
+    "label": "device serial outside the hypervisor hot-plug id charset",
     "schema": "KubernetesCsiDevice",
     "value": {
       "bus": "VIRTIO_SCSI",

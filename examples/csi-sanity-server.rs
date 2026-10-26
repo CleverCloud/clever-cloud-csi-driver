@@ -1,7 +1,7 @@
 //! Combined endpoint for the isolated csi-sanity fixture, never the deployed binary.
 use clap::Parser;
 use clever_csi_driver::{
-    axo::ControllerConfig,
+    backend::ControllerConfig,
     controller::CsiController,
     csi::{
         controller_server::ControllerServer, identity_server::IdentityServer,
@@ -26,7 +26,7 @@ struct Args {
     #[arg(long)]
     endpoint: String,
     #[arg(long)]
-    axo_url: String,
+    backend_url: String,
     #[arg(long)]
     token_file: PathBuf,
     #[arg(long)]
@@ -52,7 +52,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Err("run this fixture only in the disposable privileged test container".into());
     }
     let controller = CsiController::new(ControllerConfig {
-        axo_url: args.axo_url,
+        backend_url: args.backend_url,
         organisation_id: args.organisation_id,
         cluster_id: args.cluster_id,
         token_file: args.token_file,

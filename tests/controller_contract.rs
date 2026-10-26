@@ -1,4 +1,4 @@
-//! Contract tests against a local HTTP Axo double; no Ceph, VM or cluster mutation.
+//! Contract tests against a local HTTP backend double; no Ceph, VM or cluster mutation.
 use std::{
     collections::{HashMap, VecDeque},
     path::PathBuf,
@@ -14,7 +14,7 @@ use axum::{
     routing::{get, post},
 };
 use clever_csi_driver::{
-    axo::REQUIRED_FEATURES,
+    backend::REQUIRED_FEATURES,
     controller::{ControllerConfig, CsiController},
     csi,
 };
@@ -93,7 +93,7 @@ impl Fixture {
         let token_file = temp.path().join("token");
         std::fs::write(&token_file, "biscuit-first\n").unwrap();
         let controller = CsiController::new(ControllerConfig {
-            axo_url: format!("http://{addr}"),
+            backend_url: format!("http://{addr}"),
             organisation_id: "orga-test".into(),
             cluster_id: "kubernetes-test".into(),
             token_file,
@@ -899,7 +899,7 @@ async fn create_retries_keep_identity_and_rotate_token_without_forwarding_csi_se
     let mut request = create();
     request
         .secrets
-        .insert("userKey".into(), "must-never-reach-Axo".into());
+        .insert("userKey".into(), "must-never-reach-backend".into());
     request.parameters.insert("pool".into(), "rbd".into());
     let first = fixture
         .controller
@@ -1232,7 +1232,7 @@ async fn status_mapping_never_forwards_upstream_secrets_or_retries_mutations() {
         let fixture = Fixture::new().await;
         fixture.reply(
             http,
-            json!({"code":code,"message":"secret-supernova-token"}),
+            json!({"code":code,"message":"secret-hypervisor-token"}),
         );
         let error = fixture
             .controller
@@ -1561,7 +1561,7 @@ async fn raw_block_expansion_requires_guest_rescan() {
 #[test]
 fn tls_and_credential_configuration_fail_closed() {
     let mut config = ControllerConfig {
-        axo_url: "http://example.com".into(),
+        backend_url: "http://example.com".into(),
         organisation_id: "orga-test".into(),
         cluster_id: "cluster".into(),
         token_file: "/absolute/token".into(),
@@ -1569,9 +1569,9 @@ fn tls_and_credential_configuration_fail_closed() {
         timeout: Duration::from_secs(2),
     };
     assert!(CsiController::new(config.clone()).is_err());
-    config.axo_url = "https://secret@example.com".into();
+    config.backend_url = "https://secret@example.com".into();
     assert!(CsiController::new(config.clone()).is_err());
-    config.axo_url = "https://example.com".into();
+    config.backend_url = "https://example.com".into();
     config.cluster_id = "../../outside".into();
     assert!(CsiController::new(config.clone()).is_err());
     config.cluster_id = "cluster".into();

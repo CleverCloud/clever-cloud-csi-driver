@@ -31,6 +31,7 @@ class DeploymentContract(unittest.TestCase):
         driver = node["containers"][0]
         self.assertIn("--node-id-file=/etc/clever-csi/node-id", driver["args"])
         self.assertIn("--kubelet-root=/var/lib/kubelet", driver["args"])
+        self.assertIn("--max-volumes-per-node=2048", driver["args"])
         self.assertEqual(driver["readinessProbe"]["httpGet"]["path"], "/readyz")
         self.assertNotIn("fieldRef", str(node))
 
@@ -165,7 +166,8 @@ class DeploymentContract(unittest.TestCase):
         base = ["helm", "template", "test", str(ROOT / "charts/clever-csi-driver")]
         for value in ["controller.sidecars.provisoner=true", "sidecarImages.attacher=12", "node.resources=bad", "imagePullSecrets=secret",
                       "sidecarResourcesByRole.attacher=bad", "sidecarResourcesByRole.provisoner.limits.memory=1Gi",
-                      "sidecarResourcesByRole.registrar.limits.memory=-1"]:
+                      "sidecarResourcesByRole.registrar.limits.memory=-1",
+                      "node.maxVolumesPerNode=0", "node.maxVolumesPerNode=2049", "node.maxVolumesPerNode=null"]:
             with self.subTest(value=value):
                 result = subprocess.run(base + ["--set", value], capture_output=True, text=True)
                 self.assertNotEqual(result.returncode, 0)

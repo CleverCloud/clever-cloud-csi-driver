@@ -38,6 +38,9 @@ flowchart LR
 - Durable node state, process locking, mount ownership checks and recovery after
   device re-enumeration when no conflicting mounts remain.
 - Disk discovery by exact serial, independent of `/dev/sdX` enumeration order.
+- `NodeGetInfo` reports the hypervisor's per-VM hot-plug cap through
+  `--max-volumes-per-node` (chart value `node.maxVolumesPerNode`, default 2048,
+  the Supernova `hotplug_volumes.max_per_vm` default and maximum).
 - No Ceph client or Axo token is needed by the node plugin. Existing PV Secret
   references can still make kubelet deliver cephx credentials in CSI requests;
   the driver ignores them. The controller rereads its projected Axo token.
@@ -66,8 +69,9 @@ Block volumes remain raw.
 
 The current client requires Axo to route historical ceph-csi node IDs through
 `legacy-krbd`. New nodes require a platform-provided VM incarnation ID in
-`/etc/clever-csi/node-id`. QEMU `scsi-hd` serials must match
-`[A-Za-z0-9._-]{1,36}` and remain distinct from opaque volume handles.
+`/etc/clever-csi/node-id`. QEMU `scsi-hd` serials are Supernova hot-plug volume
+ids: they must match `[A-Za-z0-9_-]{1,36}` and remain distinct from opaque
+volume handles.
 
 Filesystem publications retain all applicable read-only constraints. A read-only
 Block publication requires a read-only attachment and a guest device confirmed

@@ -45,6 +45,7 @@ spec:
             - --node-id-file=/etc/clever-csi/node-id
             - --node-state-dir=/var/lib/clever-csi
             - --kubelet-root={{ .Values.node.kubeletDirectory }}
+            - --max-volumes-per-node={{ .Values.node.maxVolumesPerNode }}
             - --health-address=0.0.0.0:9808
           securityContext:
             privileged: true

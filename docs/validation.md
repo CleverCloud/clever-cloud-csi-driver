@@ -45,6 +45,21 @@ fencing and migration admission remain platform integration requirements. The
 dated 2026-10-13 results below are historical; their cluster checks were not
 repeated for this follow-up.
 
+## Review follow-up on 2026-10-26
+
+Alignment with the Supernova hot-plug transport (MR !168) and its Axo port.
+`cargo fmt` and `cargo clippy --all-targets` were clean. The ordinary test run
+passed 107 tests (64 library, 42 controller contract, one gRPC transport); the
+new library case covers `NodeGetInfo` `max_volumes_per_node` (default 2048,
+configured values echoed, 0 and values outside 1..=2048 refused by
+`NodeService::new`), and the serial charset is now `[A-Za-z0-9_-]{1,36}`, so a
+serial containing `.` is rejected by the node and by the controller. Both
+OpenAPI documents validated and the REST proposal passed 188/188 schema
+fixtures, including the new negative serial case. `helm lint`, the packaging
+tests and `deploy/render.py --check` passed with the new
+`node.maxVolumesPerNode` value rendered in all three phases. Linux loop-device,
+sanity-container and image checks were not repeated for this follow-up.
+
 ## Proposed REST contract
 
 Run `python3 -m pip install -r deploy/requirements.txt` followed by
@@ -237,6 +252,12 @@ identity. It does not validate real Axo, Supernova, QEMU, Ceph or migration fenc
 
 The separate `clever-priv` kernel variant follows the existing r100/r200
 wrappers and uses their shared configuration and installation hooks. Its three
-extra symbols were checked against the existing configuration. A full Exherbo
-Linux build, effective Kconfig validation, installation and KVM guest
-hotplug/resize remain release checks; these have not been run here.
+extra symbols (`SCSI_VIRTIO`, `HOTPLUG_PCI_ACPI`, `BLK_DEV_WRITE_MOUNTED`) were
+checked against the existing configuration. The Supernova hot-plug transport
+merged since (MR !168, 2026-10-15) needs `SCSI_VIRTIO` and `BLK_DEV_SD` and no
+PCI hotplug; `BLK_DEV_SD` has not been confirmed in the effective
+configuration. A full Exherbo Linux build, effective Kconfig validation,
+installation and KVM guest hotplug/resize remain release checks; these have not
+been run here, and Supernova exposes no resize instruction for hot-plugged
+volumes, so the online-expansion gate has no backend path to validate against
+yet.

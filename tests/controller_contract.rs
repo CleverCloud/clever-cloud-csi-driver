@@ -1013,7 +1013,7 @@ async fn attachment_serials_preserve_exact_ascii_identity_at_transport_limit() {
     let fixture = Fixture::new().await;
     let serials = [
         "A",
-        "disk_0.x-1",
+        "disk_0_x-1",
         "12345678-1234-1234-1234-1234567890AB",
         "12345678-1234-1234-1234-1234567890Ab",
     ];
@@ -1043,6 +1043,7 @@ async fn attachment_rejects_invalid_serials_without_truncation_or_normalization(
         "disk ",
         "disk\n",
         "disk\0",
+        "disk.0",
         "disk/0",
         "disk:0",
         "disk-é",

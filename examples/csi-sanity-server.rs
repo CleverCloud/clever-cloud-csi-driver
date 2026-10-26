@@ -66,6 +66,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         device_root: args.device_root,
         sys_block_dir: args.sys_block_dir,
         kubelet_root: args.kubelet_root,
+        max_volumes_per_node: 2048,
     })?;
     let identity = IdentityService::new(args.driver_name, true, Arc::new(AtomicBool::new(true)))?;
     let (listener, _guard) = bind_socket(&endpoint_path(&args.endpoint)?)?;

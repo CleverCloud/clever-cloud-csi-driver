@@ -276,6 +276,7 @@ impl Fixture {
             device_root: directory.path().join("dev"),
             sys_block_dir: directory.path().join("sys/block"),
             kubelet_root: directory.path().join("kubelet"),
+            max_volumes_per_node: 2048,
         };
         for path in [
             &config.device_root,
@@ -1035,12 +1036,57 @@ async fn expansion_validates_supplied_ranges_and_capabilities_before_growth() {
     );
 }
 
+#[tokio::test]
+async fn node_info_reports_the_configured_hypervisor_volume_cap() {
+    let fixture = Fixture::new(None);
+    let info = fixture
+        .service()
+        .get_info(Request::new(csi::NodeGetInfoRequest {}))
+        .await
+        .unwrap()
+        .into_inner();
+    assert_eq!(info.node_id, "vm-incarnation-123");
+    assert_eq!(info.max_volumes_per_node, 2048);
+    for configured in [1, 17] {
+        let mut config = fixture.config.clone();
+        config.max_volumes_per_node = configured;
+        let service = NodeService::new(config).unwrap();
+        let info = service
+            .get_info(Request::new(csi::NodeGetInfoRequest {}))
+            .await
+            .unwrap()
+            .into_inner();
+        assert_eq!(info.max_volumes_per_node, configured);
+        drop(service);
+    }
+
+    // 0 is the CSI "no limit" sentinel, never a hypervisor cap.
+    for out_of_range in [0, 2049, -1] {
+        let mut config = fixture.config.clone();
+        config.max_volumes_per_node = out_of_range;
+        let error = NodeService::new(config)
+            .err()
+            .expect("refused configuration");
+        assert!(matches!(error, NodeError::Configuration(_)), "{error}");
+    }
+}
+
 #[test]
 fn serial_contract_is_exact_ascii_and_bounded_for_qemu() {
-    for serial in ["a", "A_z-9.0", &"a".repeat(36)] {
+    for serial in ["a", "A_z-9", &"a".repeat(36)] {
         validate_serial(serial).unwrap();
     }
-    for serial in ["", " abc", "abc ", "a/b", "a:b", "é", &"a".repeat(37)] {
+    // Supernova's hot-plug volume id, which becomes the serial, admits no '.'.
+    for serial in [
+        "",
+        " abc",
+        "abc ",
+        "a.b",
+        "a/b",
+        "a:b",
+        "é",
+        &"a".repeat(37),
+    ] {
         assert_eq!(
             validate_serial(serial).unwrap_err().code(),
             tonic::Code::InvalidArgument

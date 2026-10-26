@@ -41,6 +41,11 @@ node:
   idFile: /etc/clever-csi/node-id
   stateDirectory: /var/lib/clever-csi
   kubeletDirectory: /var/lib/kubelet
+  # Reported by NodeGetInfo, 1 to 2048. Supernova caps hot-plugged volumes per VM
+  # at 2048 (hotplug_volumes.max_per_vm); use the lowest cap configured on the
+  # cluster's hypervisors. 0 is refused: CSI reads it as "no limit", and a
+  # hypervisor whose max_per_vm is 0 must not host CSI nodes at all.
+  maxVolumesPerNode: 2048
   # Immutable once this pool hosts node plugins; changing eligibility can delete
   # live DaemonSet pods even with OnDelete. See docs/operations.md.
   poolLabel: clever-cloud.com/csi

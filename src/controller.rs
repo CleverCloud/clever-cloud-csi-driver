@@ -195,7 +195,7 @@ impl csi::controller_server::Controller for CsiController {
                     || device_serial.len() > 36
                     || !device_serial
                         .bytes()
-                        .all(|b| b.is_ascii_alphanumeric() || b"._-".contains(&b))
+                        .all(|b| b.is_ascii_alphanumeric() || b"_-".contains(&b))
                 {
                     return Err(axo::invalid_mutation_response("attachments"));
                 }

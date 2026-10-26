@@ -73,6 +73,12 @@ struct Args {
     sys_block_dir: PathBuf,
     #[arg(long, env = "CSI_KUBELET_ROOT", default_value = "/var/lib/kubelet")]
     kubelet_root: PathBuf,
+    /// Attachable volumes NodeGetInfo reports for this VM, 1 to 2048. Supernova
+    /// caps hot-plugged volumes per VM at 2048 (`hotplug_volumes.max_per_vm`);
+    /// set the lowest cap configured on the cluster's hypervisors. 0 is refused:
+    /// CSI reads it as "no limit", which never describes a hypervisor cap.
+    #[arg(long, env = "CSI_MAX_VOLUMES_PER_NODE", default_value_t = 2048)]
+    max_volumes_per_node: i64,
 }
 
 fn required<T>(value: Option<T>, flag: &str) -> Result<T, Box<dyn std::error::Error>> {
@@ -125,6 +131,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 device_root: args.device_root,
                 sys_block_dir: args.sys_block_dir,
                 kubelet_root: args.kubelet_root,
+                max_volumes_per_node: args.max_volumes_per_node,
             })?;
             readiness.store(true, Ordering::Release);
             (None, Some(node))

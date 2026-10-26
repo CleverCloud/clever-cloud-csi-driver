@@ -434,10 +434,11 @@ components:
                   type: string
                   minLength: 1
                   maxLength: 36
-                  pattern: '^[A-Za-z0-9._-]{1,36}(?![\s\S])'
+                  pattern: '^[A-Za-z0-9_-]{1,36}(?![\s\S])'
                   description: >-
                     Exact ASCII serial of the QEMU scsi-hd device exposed over
-                    virtio-scsi, stable for this volume and unique among disks
+                    virtio-scsi: the Supernova hot-plug volume id, which admits
+                    no other character. Stable for this volume and unique among disks
                     attached to the VM. Durably bind it to this volume and exact
                     incarnation; never reuse it for another volume on that
                     incarnation, including after detach or reboot. Never truncate,

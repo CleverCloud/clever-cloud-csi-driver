@@ -231,7 +231,8 @@ The flat record includes `volumeId`, `nodeId`, `transport`, `device`,
 `generation`, `readonly`, shape and initialization policy. Validate combinations:
 
 - `QEMU` requires `device.bus: VIRTIO_SCSI` and an exact ASCII serial matching
-  `[A-Za-z0-9._-]{1,36}`: QEMU scsi-hd over virtio-scsi, not virtio-blk.
+  `[A-Za-z0-9_-]{1,36}`, the Supernova hot-plug volume id: QEMU scsi-hd over
+  virtio-scsi, not virtio-blk.
 - `LEGACY_KRBD` requires `device: null` and an authoritative legacy node. It
   is reserved for a verified legacy image not yet adopted on the new path,
   with no QEMU attachment or pending claim and no recorded fence forbidding

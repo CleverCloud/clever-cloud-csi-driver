@@ -377,6 +377,7 @@ async fn lifecycle(root: &Path, fs_type: Option<&str>) {
         device_root: "/dev".into(),
         sys_block_dir: root.join("synthetic-sysfs-block"),
         kubelet_root: root.join("kubelet"),
+        max_volumes_per_node: 2048,
     };
     fixture_serial(&config.sys_block_dir, &disk, &format!("test-{name}"));
     let unrelated = config.sys_block_dir.join("unrelated/device");
@@ -643,6 +644,7 @@ async fn protected_readonly_block(root: &Path) {
         device_root: "/dev".into(),
         sys_block_dir: root.join("synthetic-sysfs-block"),
         kubelet_root: root.join("kubelet"),
+        max_volumes_per_node: 2048,
     };
     fixture_serial(&config.sys_block_dir, &disk, "test-readonly-block");
     let stage = config.kubelet_root.join("plugins/test/globalmount");
@@ -720,6 +722,7 @@ async fn blank_adopted_volume_is_unchanged(root: &Path) {
         device_root: "/dev".into(),
         sys_block_dir: root.join("synthetic-sysfs-block"),
         kubelet_root: root.join("kubelet"),
+        max_volumes_per_node: 2048,
     };
     fixture_serial(&config.sys_block_dir, &disk, "test-blank");
     let staging_target_path = config
@@ -801,6 +804,7 @@ fn test_config(root: &Path, disk: &LoopDisk, serial: &str) -> NodeConfig {
         device_root: "/dev".into(),
         sys_block_dir: root.join("synthetic-sysfs-block"),
         kubelet_root: root.join("kubelet"),
+        max_volumes_per_node: 2048,
     };
     fixture_serial(&config.sys_block_dir, disk, serial);
     config

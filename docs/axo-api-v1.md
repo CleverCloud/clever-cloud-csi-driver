@@ -115,8 +115,12 @@ controller advertises only its implemented CSI RPCs: volume create/delete,
 publish/unpublish including read-only, expansion, snapshot create/delete/list,
 and clone. It does not advertise GetCapacity, ListVolumes, ControllerGetVolume,
 ControllerModifyVolume, GetSnapshot, topology, RWX or SINGLE_NODE_MULTI_WRITER.
-Single-node writer and single-node reader-only access modes are accepted on
-the QEMU path. Existing legacy attachments/expansion retain their established
+Single-node writer and single-node reader-only access modes are accepted by
+the driver on the QEMU path, but until Supernova offers a read-only blockdev
+option (see the attachment section) Axo cannot honour `readonly: true` there:
+it must refuse the request (`409`/`412`, `FAILED_PRECONDITION`) or route a
+permitted legacy request to `legacy-krbd`, and reader-only consumers stay on
+legacy nodes. Existing legacy attachments/expansion retain their established
 capabilities; they do not authorize the same modes on a new QEMU attachment.
 
 ### Provisioning, clone, restore and adoption
@@ -249,7 +253,11 @@ incarnation returns `FAILED_PRECONDITION` before any host operation.
 Kubernetes Node-name reuse must not make an old context valid on a replacement VM.
 
 This transport uses **QEMU `scsi-hd` over virtio-scsi**. `device_serial` is 1–36
-ASCII characters, matching `[A-Za-z0-9._-]{1,36}`. Axo must allocate a stable
+ASCII characters, matching `[A-Za-z0-9_-]{1,36}`: it is the Supernova hot-plug
+volume id (`attach_volume` `volume.id`, used as both QEMU `serial` and
+`device_id`; Supernova MR !168 merged 2026-10-15, Axo `supernova-hv` port of
+2026-10-16), and the hypervisor refuses any other character, including `.`.
+Axo must allocate a stable
 serial for the volume, ensure uniqueness among disks attached to the VM, and
 durably bind the serial to the volume and exact VM incarnation. Never reuse a
 serial for a different volume on that incarnation, even after detach, reboot,
@@ -268,6 +276,18 @@ virtio-blk, whose 20-byte serial limit requires a separate transport contract.
 Volume handles keep their existing opaque format and are not subject to the
 serial character or length restrictions.
 
+The hypervisor primitive behind this transport is stateless. Supernova keeps no
+attachment record across a VM stop, refuses a repeated `attach_volume` for an id
+already plugged, detaches with `device_del` without guest acknowledgement, takes
+no librbd lock and can plug the same image into another VM. Idempotent ensure,
+durable serial/incarnation binding, exclusivity and fencing therefore live in
+Axo, above that primitive. Supernova also refuses attachments to persistent VMs,
+to VMs outside the `STARTING`, `DEPLOYING`, `READY` and `UP` states, to VMs
+booted without volume controllers, and beyond `hotplug_volumes.max_per_vm`
+(default and maximum 2048, the value the node reports as
+`max_volumes_per_node`). Axo maps the per-VM cap to `429`/`507` and the other
+refusals to `409`/`412` under the table below, never to success.
+
 Read-only requests must be enforced by QEMU/Axo. On the QEMU path,
 `SINGLE_NODE_READER_ONLY` requires `readonly: true`; a false flag on a reader-only
 legacy request is not permission to use QEMU. For filesystems, the effective guest mount remains
@@ -278,6 +298,10 @@ through the device special file. A read-only publication therefore requires
 both `readonly: true` from Axo and `blockdev --getro` reporting `1` in the guest.
 The Node plugin rejects a read-only raw Block publication on a writable
 attachment and never changes the shared device's global read-only flag.
+Supernova's `attach_volume` has no read-only option (MR !168), so an Axo
+implementation on the current hypervisor cannot honour `readonly: true` on the
+QEMU path: it must refuse such requests, or route a permitted reader-only legacy
+request to `legacy-krbd`, until Supernova gains a read-only blockdev option.
 
 The minimum safe attachment transaction requires:
 
@@ -406,7 +430,15 @@ refusal, old-node legacy routing, real QEMU attach/detach acknowledgement,
 Ceph credential isolation, preformat crash recovery without data loss, preserved
 legacy image/snapshot identity, exact-once adoption billing, snapshot restore
 and clone integrity, and monotonic online expansion including guest rescans.
-Run those tests with real Supernova and Ceph before an attachment takeover.
+Run those tests with real Supernova and Ceph before an attachment takeover, on
+a hypervisor where `hotplug_volumes.enabled` was set before the test VMs booted
+and whose QEMU supports `iothread-vq-mapping` (QEMU 10 or later). Supernova
+exposes no resize instruction for hot-plugged volumes (MR !168 offers
+`attach_volume` and `detach_volume` only), so Axo cannot yet perform the QEMU
+capacity update this contract requires. Online expansion of QEMU volumes stays
+gated until Supernova provides that instruction and the test shows the grown
+capacity reported by QEMU and visible to the guest after a rescan; a grown RBD
+image that happens to become visible without that step does not close the gate.
 
 Required failure scenarios include replaying an old node's publish context on a
 replacement VM with the same disk serial; attempting serial reuse after detach;

@@ -31,6 +31,7 @@ async fn unix_grpc_exposes_identity_vm_incarnation_and_safe_errors() {
         device_root: "/dev".into(),
         sys_block_dir: "/sys/block".into(),
         kubelet_root: dir.path().join("kubelet"),
+        max_volumes_per_node: 256,
     })
     .unwrap();
     let (stop, stopped) = tokio::sync::oneshot::channel();
@@ -74,14 +75,13 @@ async fn unix_grpc_exposes_identity_vm_incarnation_and_safe_errors() {
         Some(true)
     );
     let mut node = NodeClient::new(channel);
-    assert_eq!(
-        node.node_get_info(csi::NodeGetInfoRequest {})
-            .await
-            .unwrap()
-            .into_inner()
-            .node_id,
-        "vm-incarnation-from-platform"
-    );
+    let info = node
+        .node_get_info(csi::NodeGetInfoRequest {})
+        .await
+        .unwrap()
+        .into_inner();
+    assert_eq!(info.node_id, "vm-incarnation-from-platform");
+    assert_eq!(info.max_volumes_per_node, 256);
     let error = node
         .node_unpublish_volume(csi::NodeUnpublishVolumeRequest {
             volume_id: "volume".into(),

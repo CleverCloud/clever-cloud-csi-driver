@@ -32,6 +32,11 @@ pub struct NodeConfig {
     pub device_root: PathBuf,
     pub sys_block_dir: PathBuf,
     pub kubelet_root: PathBuf,
+    /// Volumes `NodeGetInfo` advertises as attachable to this VM, 1 to 2048.
+    /// Supernova caps hot-plugged volumes per VM at 2048
+    /// (`hotplug_volumes.max_per_vm`). 0 is refused: CSI reads it as "no
+    /// limit", which never describes a hypervisor cap.
+    pub max_volumes_per_node: i64,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -155,15 +160,19 @@ fn validate_volume_id(value: &str) -> Result<(), Status> {
     Ok(())
 }
 
+/// Supernova addresses hot-plugged volumes on 8 virtio-scsi controllers and
+/// caps `hotplug_volumes.max_per_vm` at this value.
+pub const MAX_VOLUMES_PER_VM: i64 = 2048;
+
 fn validate_serial(value: &str) -> Result<(), Status> {
     if value.is_empty()
         || value.len() > 36
         || !value
             .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || b"._-".contains(&byte))
+            .all(|byte| byte.is_ascii_alphanumeric() || b"_-".contains(&byte))
     {
         return Err(Status::invalid_argument(
-            "device_serial must match [A-Za-z0-9._-]{1,36}",
+            "device_serial must match [A-Za-z0-9_-]{1,36}",
         ));
     }
     Ok(())
@@ -380,6 +389,11 @@ impl NodeService {
     pub fn new(mut config: NodeConfig) -> Result<Self, NodeError> {
         validate_token(&config.node_id, "node_id (platform VM identity)", 256)
             .map_err(|e| NodeError::Configuration(e.message().to_owned()))?;
+        if !(1..=MAX_VOLUMES_PER_VM).contains(&config.max_volumes_per_node) {
+            return Err(NodeError::Configuration(format!(
+                "max_volumes_per_node must be between 1 and {MAX_VOLUMES_PER_VM}"
+            )));
+        }
         for path in [
             &config.state_dir,
             &config.device_root,
@@ -1365,7 +1379,7 @@ impl NodeService {
     ) -> Result<Response<csi::NodeGetInfoResponse>, Status> {
         Ok(Response::new(csi::NodeGetInfoResponse {
             node_id: self.config.node_id.clone(),
-            max_volumes_per_node: 0,
+            max_volumes_per_node: self.config.max_volumes_per_node,
             accessible_topology: None,
         }))
     }

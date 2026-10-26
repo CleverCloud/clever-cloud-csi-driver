@@ -141,7 +141,8 @@ pub enum AttachmentRecord {
     Qemu {
         volume_id: String,
         node_id: String,
-        /// Exact scsi-hd/virtio-scsi serial, ASCII [A-Za-z0-9._-]{1,36}.
+        /// Exact scsi-hd/virtio-scsi serial, ASCII [A-Za-z0-9_-]{1,36}: the
+        /// Supernova hot-plug volume id, which refuses any other character.
         device_serial: String,
         readonly: bool,
         #[serde(flatten)]

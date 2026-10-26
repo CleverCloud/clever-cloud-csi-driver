@@ -1216,8 +1216,9 @@ components:
           type: string
           minLength: 1
           maxLength: 36
-          pattern: ^[A-Za-z0-9._-]{1,36}(?![\s\S])
-          description: Exact QEMU scsi-hd serial exposed by the guest through SCSI VPD page 0x80. Stable
+          pattern: ^[A-Za-z0-9_-]{1,36}(?![\s\S])
+          description: Exact QEMU scsi-hd serial exposed by the guest through SCSI VPD page 0x80, the
+            Supernova hot-plug volume id (no other character is accepted by the hypervisor). Stable
             for the volume across retries, reboot and migration of the same VM incarnation. Do not rotate
             it merely because attachment generation or fencing epoch changes. Never reassign it to another
             volume on that incarnation, including after detach, reboot or cleanup. Persist the

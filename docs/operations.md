@@ -95,7 +95,11 @@ authorization on its own. An older publish context without `node_id` is also
 rejected. When upgrading an earlier test deployment, stop the affected consumers
 and complete a normal detach/reattach with the updated controller before
 restaging; do not manufacture a context or edit a VolumeAttachment to bypass
-the check. After device re-enumeration, the plugin can update
+the check. The node plugin also re-validates persisted serials at startup
+against the current `[A-Za-z0-9_-]{1,36}` contract: a test registry written
+with the earlier `[A-Za-z0-9._-]` charset must have all its volumes unstaged
+before the node image is upgraded, otherwise the plugin refuses to start until
+`registry.json` under the state directory is removed. After device re-enumeration, the plugin can update
 its persisted path and device number only after checking that the
 old staging and published mounts are gone and the new device has no conflicting
 mounts. Conflicting identities and mounted devices still cause refusal. Raw
@@ -112,7 +116,11 @@ Unpublish removes the driver's target file or empty directory after unmounting
 and verifying ownership. It does not recursively remove data or unrelated
 targets. The staging directory remains owned by kubelet after Unstage.
 
-The QEMU path supports XFS/ext4 and single-node writer/reader access only. Its
+The QEMU path supports XFS/ext4 and single-node writer access; single-node
+reader-only access is accepted by the driver, but the current Supernova
+hot-plug (MR !168) has no read-only blockdev option, so Axo refuses it on new
+nodes and reader-only workloads stay on legacy nodes until that option exists.
+Its
 mount-option allowlist is `ro`, `rw`, `nosuid`, `nodev`, `noexec`, `noatime`,
 `relatime`, `strictatime`, `nodiratime`, `sync`, `dirsync`, `discard`, `nodiscard`,
 plus `nouuid` for XFS. Conflicting options, encryption, `rbd-nbd`, other
@@ -136,16 +144,44 @@ can become eligible. See the [backend contract](axo-api-v1.md).
 ## Inputs owned by the platform
 
 - Install `clever/linux-vm:kube` on the relevant hypervisors and select
-  `/linux-vm-kube` only for new CKE node generations. The guest needs virtio-scsi,
-  hotplug and mounted block-device write support. The `linux-vm` r300 variant in
-  `clever-priv` follows the existing r100/r200 package layout and enables
-  `SCSI_VIRTIO`, `HOTPLUG_PCI_ACPI` and `BLK_DEV_WRITE_MOUNTED` through
-  `extra_config`. It inherits the shared configuration and installation hooks;
-  a valid existing `/kernel` symlink is preserved, while other cases follow the
-  standard kernel hook and require checking before installation. Check the
-  effective build configuration and boot the selected image in a test guest
-  before rollout. The package alone does not
-  change the kernel selected by Axo for a node generation.
+  `/linux-vm-kube` only for new CKE node generations. Supernova hot-plugs
+  volumes as `scsi-hd` disks on virtio-scsi controllers created at boot
+  (Supernova MR !168, merged 2026-10-15, ported into Axo `supernova-hv` on
+  2026-10-16), so an attachment never touches the PCI bus and the guest needs
+  no ACPI/PCI hotplug support. The guest needs the virtio-scsi and SCSI disk
+  drivers plus mounted block-device write support: `SCSI_VIRTIO`, `BLK_DEV_SD`
+  and `BLK_DEV_WRITE_MOUNTED`. The `linux-vm` r300 variant in `clever-priv`
+  follows the existing r100/r200 package layout and enables `SCSI_VIRTIO`,
+  `HOTPLUG_PCI_ACPI` and `BLK_DEV_WRITE_MOUNTED` through `extra_config`;
+  `HOTPLUG_PCI_ACPI` is unnecessary but harmless, and `BLK_DEV_SD` must be
+  confirmed in the effective configuration. It inherits the shared
+  configuration and installation hooks; a valid existing `/kernel` symlink is
+  preserved, while other cases follow the standard kernel hook and require
+  checking before installation. Check the effective build configuration and
+  boot the selected image in a test guest before rollout. The package alone
+  does not change the kernel selected by Axo for a node generation, and a
+  hypervisor with kernel injection disabled (Supernova MR !175,
+  `disable_kernel_injection`) ignores that selection: its guest images must
+  then carry their own kernel with the symbols above.
+- Enable volume hot-plug on every hypervisor hosting CSI-eligible nodes before
+  those nodes boot: Supernova `hotplug_volumes.enabled: true`, on a QEMU whose
+  `virtio-scsi-pci` supports `iothread-vq-mapping` (QEMU 10 or later; with an
+  older QEMU every ephemeral boot on that hypervisor fails). Only ephemeral VMs
+  booted after enabling carry the eight volume controllers; a node booted
+  earlier never gains them, so it must be replaced by a new node generation
+  rather than relabelled into the `clever-cloud.com/csi: supernova` pool.
+  Supernova refuses a hard reboot of a VM whose hot-plugged volumes it can
+  still list over QMP and reports the refusal only in the hypervisor logs; when
+  the monitor does not answer within 2 s the check is skipped and the reboot
+  rebuilds QEMU without the volumes. Detach, and let Axo clear its attachment
+  records, before any forced reboot, and treat a node hard-rebooted while
+  volumes were attached as a new incarnation. The hypervisor caps hot-plugged
+  volumes per VM (`hotplug_volumes.max_per_vm`, default and maximum 2048); the
+  node plugin reports that cap through `--max-volumes-per-node` (chart value
+  `node.maxVolumesPerNode`, default 2048, 1 to 2048), which must match the
+  lowest cap configured on the cluster's hypervisors. Do not copy a
+  hypervisor's `max_per_vm: 0` into it: CSI reads 0 as "no limit", and such a
+  hypervisor must not host CSI nodes.
 - Create `/etc/clever-csi/node-id` in each guest, containing the exact VM incarnation identifier
   accepted by Axo/Supernova. The chart mounts that existing file with
   `hostPath.type: File`; a missing file prevents startup. A Kubernetes Node name,
@@ -279,7 +315,10 @@ size-changing PVC updates for affected volumes while this gate is active, throug
 admission or an equivalent enforced policy. Neither the chart nor Helm provides
 that coordination. The resizer disables its pod-cache/in-use workaround because
 the backend contract requires online growth; a backend requiring offline resize
-does not satisfy this deployment contract.
+does not satisfy this deployment contract. Supernova's hot-plug path (MR !168)
+exposes no resize instruction, so Axo cannot yet update QEMU capacity as that
+path requires; keep this gate active for QEMU volumes until Supernova provides
+one and Axo demonstrates image-then-QEMU growth on real Supernova.
 
 Before `final`, the platform must enforce a persistent scheduling/admission gate:
 **no workload that can consume a native Clever CSI volume may be scheduled on a

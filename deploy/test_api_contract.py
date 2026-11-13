@@ -66,6 +66,17 @@ def main():
     assert all(ids), "every operation must have operationId"
     assert len(ids) == len(set(ids)), "operationIds must be unique"
     catalogue = document["x-csi-error-codes"]
+    context_types = {member["properties"]["type"]["enum"][0] for member in schemas["ErrorContext"]["oneOf"]}
+    handler_context_types = {"Empty", "Field", "Resource", "Operation"}
+    assert handler_context_types <= context_types, "CSI handler context types must be ErrorContext types"
+    for code, entry in catalogue.items():
+        context_type = entry["contextType"]
+        assert context_type in handler_context_types, f"{code}: contextType {context_type} is not a context a CSI handler emits"
+        example = entry.get("contextExample")
+        if example is not None:
+            assert example.get("type") == context_type, f"{code}: contextExample type differs from contextType"
+            validator = ContractValidator({"$ref": f"{BASE}#/components/schemas/ErrorContext"}, registry=registry)
+            assert not list(validator.iter_errors(example)), f"{code}: contextExample is not a valid ErrorContext"
     for path, item in document["paths"].items():
         for method, operation in item.items():
             if method not in {"get", "post", "put", "patch", "delete", "head", "options", "trace"}:

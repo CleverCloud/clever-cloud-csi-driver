@@ -98,7 +98,7 @@ restaging; do not manufacture a context or edit a VolumeAttachment to bypass
 the check. The node plugin also re-validates persisted serials at startup
 against the current `[A-Za-z0-9_-]{1,36}` contract: a test registry written
 with the earlier `[A-Za-z0-9._-]` charset must have all its volumes unstaged
-before the node image is upgraded, otherwise the plugin refuses to start until
+before the node-plugin image is upgraded, otherwise the plugin refuses to start until
 `registry.json` under the state directory is removed. After device re-enumeration, the plugin can update
 its persisted path and device number only after checking that the
 old staging and published mounts are gone and the new device has no conflicting
@@ -170,6 +170,13 @@ can become eligible. See the [backend contract](backend-api-v1.md).
   booted after enabling carry the eight volume controllers; a node booted
   earlier never gains them, so it must be replaced by a new node generation
   rather than relabelled into the `clever-cloud.com/csi: qemu` pool.
+  The hypervisor opens each volume's RBD image itself, with its own Ceph
+  identity, and refuses the attachment when it has no RBD support: its Ceph
+  client user and configuration file must be set (`rbd.user` plus
+  `rbd.confFile` or `rbd.conf_file`, depending on the agent implementation)
+  and its QEMU must list the `rbd` block driver. The hypervisor agent probes
+  that driver once, when it starts: a failed probe leaves RBD disabled, and
+  every RBD attachment refused, until the agent restarts.
   The hypervisor refuses a hard reboot of a VM whose hot-plugged volumes it can
   still list over QMP and reports the refusal only in the hypervisor logs; when
   the monitor does not answer within 2 s the check is skipped and the reboot
@@ -377,10 +384,26 @@ These outputs are integration inputs, **not a change to the platform catalog**. 
 platform change must register the plugin and its owned GVKs, wire its phase/state gates,
 reject adoption of a foreign install, and provide `${OVD_CLUSTER_ID}` plus the
 new `${OVD_CSI_ORGANISATION_ID}` substitution. The latter is not registered in
-the platform today and must be added to its explicit placeholder allowlist. The API base
+the platform today and must be added to its explicit placeholder allowlist. It
+must render the owner identifier exactly as the backend stores it on the
+cluster (`orga_*` or `user_*`): the backend keys its Kubernetes routes on that
+resolved owner, and its existing token-authenticated routes answer HTTP 400 to
+any other spelling of the owner path segment, `tenant_*` included. The API base
 URL defaults to `https://api.clever-cloud.com`; override it at render time for a
 different deployment. The platform must provision the token Secret independently and
 preserve existing shared objects during legacy teardown.
+
+The platform's node-image contract, published on 2026-11-13, adds two conditions
+to that change. A node image is the guest disk image a cluster node boots from;
+it carries the kernel, the Kubernetes binaries and a preloaded set of container
+images. Every image tag a catalog plugin deploys must already be preloaded in
+every node image the platform release supports, one release before the plugin
+that uses it: an air-gapped node runs only the container images its node image
+preloads (`IfNotPresent`, no registry). The five sidecar tags pinned below are
+preloaded in every node image the platform supports today; the driver image is
+in none and must be added to a node image first. A catalog plugin version is
+also immutable: any change to the vendored manifests, even one field, ships as
+a new plugin version.
 
 Resource budgets must be stored per cluster in the platform's persisted configuration and
 passed into every render/reconciliation; do not vendor one fixed set of limits

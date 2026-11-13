@@ -1043,7 +1043,7 @@
         "apiRequestId": "request_test",
         "code": "clever.kubernetes.snapshot-failed",
         "context": {
-          "type": "empty"
+          "type": "Empty"
         },
         "error": "Sanitized failure"
       }
@@ -1084,7 +1084,7 @@
         "apiRequestId": "request_test",
         "code": "clever.kubernetes.snapshot-failed",
         "context": {
-          "type": "empty"
+          "type": "Empty"
         },
         "error": "Sanitized failure"
       }
@@ -1125,7 +1125,7 @@
         "apiRequestId": "request_test",
         "code": "clever.kubernetes.snapshot-failed",
         "context": {
-          "type": "empty"
+          "type": "Empty"
         },
         "error": "Sanitized failure"
       }
@@ -1343,7 +1343,7 @@
         "apiRequestId": "request_test",
         "code": "clever.kubernetes.snapshot-failed",
         "context": {
-          "type": "empty"
+          "type": "Empty"
         },
         "error": "Sanitized failure"
       }
@@ -1367,7 +1367,7 @@
         "apiRequestId": "request_test",
         "code": "clever.kubernetes.snapshot-failed",
         "context": {
-          "type": "empty"
+          "type": "Empty"
         },
         "error": "Sanitized failure"
       }
@@ -2110,7 +2110,249 @@
       "apiRequestId": "request_test",
       "code": "clever.future.error",
       "context": {
+        "type": "Empty"
+      },
+      "error": "Sanitized failure"
+    },
+    "valid": true
+  },
+  {
+    "label": "shared error context former snake_case tag rejected",
+    "schema": "HTTPErrorBody",
+    "value": {
+      "apiRequestId": "request_test",
+      "code": "clever.future.error",
+      "context": {
         "type": "empty"
+      },
+      "error": "Sanitized failure"
+    },
+    "valid": false
+  },
+  {
+    "label": "shared error context path matches no operation",
+    "schema": "HTTPErrorBody",
+    "value": {
+      "apiRequestId": "request_test",
+      "code": "clever.future.error",
+      "context": {
+        "type": "EmptyContext"
+      },
+      "error": "Sanitized failure"
+    },
+    "valid": true
+  },
+  {
+    "label": "shared error field context",
+    "schema": "HTTPErrorBody",
+    "value": {
+      "apiRequestId": "request_test",
+      "code": "clever.future.error",
+      "context": {
+        "type": "Field",
+        "name": "capacityBytes",
+        "error": {
+          "value": "0",
+          "reason": null
+        }
+      },
+      "error": "Sanitized failure"
+    },
+    "valid": true
+  },
+  {
+    "label": "shared error field context former code/error members rejected",
+    "schema": "HTTPErrorBody",
+    "value": {
+      "apiRequestId": "request_test",
+      "code": "clever.future.error",
+      "context": {
+        "type": "Field",
+        "name": "capacityBytes",
+        "error": {
+          "code": "out-of-range",
+          "error": "too small"
+        }
+      },
+      "error": "Sanitized failure"
+    },
+    "valid": false
+  },
+  {
+    "label": "shared error field context requires value member",
+    "schema": "HTTPErrorBody",
+    "value": {
+      "apiRequestId": "request_test",
+      "code": "clever.future.error",
+      "context": {
+        "type": "Field",
+        "name": "capacityBytes",
+        "error": {
+          "reason": null
+        }
+      },
+      "error": "Sanitized failure"
+    },
+    "valid": false
+  },
+  {
+    "label": "shared error field context requires reason member",
+    "schema": "HTTPErrorBody",
+    "value": {
+      "apiRequestId": "request_test",
+      "code": "clever.future.error",
+      "context": {
+        "type": "Field",
+        "name": "capacityBytes",
+        "error": {
+          "value": "0"
+        }
+      },
+      "error": "Sanitized failure"
+    },
+    "valid": false
+  },
+  {
+    "label": "shared error field context empty value",
+    "schema": "HTTPErrorBody",
+    "value": {
+      "apiRequestId": "request_test",
+      "code": "clever.future.error",
+      "context": {
+        "type": "Field",
+        "name": "parameters",
+        "error": {
+          "value": "",
+          "reason": null
+        }
+      },
+      "error": "Sanitized failure"
+    },
+    "valid": true
+  },
+  {
+    "label": "shared error operation context null name",
+    "schema": "HTTPErrorBody",
+    "value": {
+      "apiRequestId": "request_test",
+      "code": "clever.future.error",
+      "context": {
+        "type": "Operation",
+        "operation": "ATTACHMENT_ENSURE",
+        "kind": "operation",
+        "name": null
+      },
+      "error": "Sanitized failure"
+    },
+    "valid": true
+  },
+  {
+    "label": "shared error operation context requires name member",
+    "schema": "HTTPErrorBody",
+    "value": {
+      "apiRequestId": "request_test",
+      "code": "clever.future.error",
+      "context": {
+        "type": "Operation",
+        "operation": "ATTACHMENT_ENSURE",
+        "kind": "operation"
+      },
+      "error": "Sanitized failure"
+    },
+    "valid": false
+  },
+  {
+    "label": "shared error gateway context",
+    "schema": "HTTPErrorBody",
+    "value": {
+      "apiRequestId": "request_test",
+      "code": "clever.future.error",
+      "context": {
+        "type": "GatewayError",
+        "originalStatus": 502,
+        "originalBody": "upstream response"
+      },
+      "error": "Sanitized failure"
+    },
+    "valid": true
+  },
+  {
+    "label": "shared error gateway context former member names rejected",
+    "schema": "HTTPErrorBody",
+    "value": {
+      "apiRequestId": "request_test",
+      "code": "clever.future.error",
+      "context": {
+        "type": "GatewayError",
+        "original_status": 502,
+        "original_body": "upstream response"
+      },
+      "error": "Sanitized failure"
+    },
+    "valid": false
+  },
+  {
+    "label": "shared error multiple fields context",
+    "schema": "HTTPErrorBody",
+    "value": {
+      "apiRequestId": "request_test",
+      "code": "clever.future.error",
+      "context": {
+        "type": "MultipleFields",
+        "fields": {
+          "capacityBytes": {
+            "value": "0",
+            "reason": "too small"
+          }
+        }
+      },
+      "error": "Sanitized failure"
+    },
+    "valid": true
+  },
+  {
+    "label": "shared error query parameter context",
+    "schema": "HTTPErrorBody",
+    "value": {
+      "apiRequestId": "request_test",
+      "code": "clever.future.error",
+      "context": {
+        "type": "OVDErrorFieldContext",
+        "fieldName": "limit",
+        "fieldValue": "x"
+      },
+      "error": "Sanitized failure"
+    },
+    "valid": true
+  },
+  {
+    "label": "shared error input context",
+    "schema": "HTTPErrorBody",
+    "value": {
+      "apiRequestId": "request_test",
+      "code": "clever.future.error",
+      "context": {
+        "type": "Input",
+        "names": [
+          "capacityBytes"
+        ]
+      },
+      "error": "Sanitized failure"
+    },
+    "valid": true
+  },
+  {
+    "label": "shared error selector context",
+    "schema": "HTTPErrorBody",
+    "value": {
+      "apiRequestId": "request_test",
+      "code": "clever.future.error",
+      "context": {
+        "type": "Selector",
+        "path": [
+          "source",
+          "id"
+        ]
       },
       "error": "Sanitized failure"
     },
@@ -2129,7 +2371,7 @@
       "apiRequestId": "request_test",
       "code": "clever.kubernetes.snapshot-failed",
       "context": {
-        "type": "empty"
+        "type": "Empty"
       },
       "error": "public failure"
     },
@@ -2142,7 +2384,7 @@
       "apiRequestId": "request_test",
       "code": "clever.kubernetes.snapshot-failed",
       "context": {
-        "type": "empty"
+        "type": "Empty"
       },
       "error": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
     },
@@ -2155,7 +2397,7 @@
       "apiRequestId": "request_test",
       "code": "clever.kubernetes.snapshot-failed",
       "context": {
-        "type": "empty"
+        "type": "Empty"
       },
       "error": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
     },
@@ -2168,7 +2410,7 @@
       "apiRequestId": "request_test",
       "code": "clever.kubernetes.snapshot-failed",
       "context": {
-        "type": "empty"
+        "type": "Empty"
       },
       "error": "éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé"
     },
@@ -2181,7 +2423,7 @@
       "apiRequestId": "request_test",
       "code": "clever.kubernetes.snapshot-failed",
       "context": {
-        "type": "empty"
+        "type": "Empty"
       },
       "error": "ééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé"
     },
@@ -2194,8 +2436,9 @@
       "apiRequestId": "request_test",
       "code": "clever.kubernetes.snapshot-failed",
       "context": {
-        "type": "gateway_error",
-        "original_body": "private upstream response"
+        "type": "GatewayError",
+        "originalStatus": 502,
+        "originalBody": "private upstream response"
       },
       "error": "public failure"
     },
@@ -2208,7 +2451,7 @@
       "apiRequestId": "request_test",
       "code": "clever.kubernetes.snapshot-failed",
       "context": {
-        "type": "resource",
+        "type": "Resource",
         "kind": "volume",
         "name": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
       },
@@ -2223,13 +2466,65 @@
       "apiRequestId": "request_test",
       "code": "clever.kubernetes.snapshot-failed",
       "context": {
-        "type": "resource",
+        "type": "Resource",
         "kind": "volume",
         "name": "volume_1"
       },
       "error": "public failure"
     },
     "valid": true
+  },
+  {
+    "label": "public failure operation reference",
+    "schema": "KubernetesCsiFailure",
+    "value": {
+      "apiRequestId": "request_test",
+      "code": "clever.kubernetes.snapshot-failed",
+      "context": {
+        "type": "Operation",
+        "operation": "ATTACHMENT_ENSURE",
+        "kind": "operation",
+        "name": "kubernetes_operation_01ARZ3NDEKTSV4RRFFQ69G5FAV"
+      },
+      "error": "public failure"
+    },
+    "valid": true
+  },
+  {
+    "label": "public failure field reference",
+    "schema": "KubernetesCsiFailure",
+    "value": {
+      "apiRequestId": "request_test",
+      "code": "clever.kubernetes.capacity-out-of-range",
+      "context": {
+        "type": "Field",
+        "name": "requiredBytes",
+        "error": {
+          "value": "",
+          "reason": null
+        }
+      },
+      "error": "public failure"
+    },
+    "valid": true
+  },
+  {
+    "label": "public failure field value not retained",
+    "schema": "KubernetesCsiFailure",
+    "value": {
+      "apiRequestId": "request_test",
+      "code": "clever.kubernetes.capacity-out-of-range",
+      "context": {
+        "type": "Field",
+        "name": "requiredBytes",
+        "error": {
+          "value": "1073741824",
+          "reason": null
+        }
+      },
+      "error": "public failure"
+    },
+    "valid": false
   },
   {
     "label": "DETACHED requires at least one completed node",

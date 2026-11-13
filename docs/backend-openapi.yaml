@@ -6,10 +6,10 @@ info:
     Proposed contract revision 2026-10-13. Neither the current clever-csi-driver nor the existing backend implements this revision. The driver at baseline commit 339e7f0 implements the separate clever-csi-v1 action-based protocol. This document is an integration target, not a deployable compatibility claim; see backend-api.md for the implementation boundary and rollout prerequisites.
     Every resource lookup is byte-exact and scoped to the authenticated owner and cluster, using the authoritative backend registry and the ceph-csi journal where applicable. GET, listing and resolve do not register aliases, adopt resources or trigger billing. Backend lookup failure is an error, never absence. Adoption occurs only during an authorized QEMU attachment, once and durably.
     Before rollout, inventory all existing volume handles, snapshot handles and node identities. This revision restricts resource handles to a path-safe ASCII alphabet; incompatible existing identities are never rewritten and never treated locally as absent. The driver must fail with FAILED_PRECONDITION and require operator intervention. Node identities are opaque tokens, not necessarily UUIDs; the HTTP frontend must preserve a correctly percent-encoded path segment byte-for-byte. If round-trip safety cannot be established, fail without reporting successful deletion.
-    JSON fields are camelCase and CSI business enums are SCREAMING_SNAKE_CASE. The shared backend error-context representation retains its existing snake_case discriminants and fields. Keys inside parameters and volumeContext retain their CSI spellings. JSON Schema maxLength counts Unicode characters, not UTF-8 bytes: x-maxUtf8Bytes documents additional byte limits enforced by server validation. Request fields, types and business enums are validated; unknown request fields are rejected. Responses may add fields. Feature names are forward-compatible strings; features enable operations, never alternative response shapes. New business enum values require a newer pinned Clever-API-Version.
+    JSON fields are camelCase and CSI business enums are SCREAMING_SNAKE_CASE. HTTPErrorBody, ErrorContext and FieldError below copy the schemas the backend has published since 2026-10-30: context is discriminated by PascalCase type tags (Empty, Field, Resource, Operation, GatewayError with originalStatus and originalBody, among others) and a field error is described as value and reason. The x-csi-error-codes catalogue names the context type each handler code carries. FieldError.value is required by the published schema: when the rejected input is a parameters or volumeContext entry, an unknown request field or a request body that could not be decoded, a CSI handler sends the empty string there and does not quote that input in FieldError.reason or in error, because it may bear a credential. Keys inside parameters and volumeContext retain their CSI spellings. JSON Schema maxLength counts Unicode characters, not UTF-8 bytes: x-maxUtf8Bytes documents additional byte limits enforced by server validation. Request fields, types and business enums are validated; unknown request fields are rejected. Responses may add fields. Feature names are forward-compatible strings; features enable operations, never alternative response shapes. New business enum values require a newer pinned Clever-API-Version.
     Mutations reconcile durable intent. Success means verified operation-specific postconditions, never merely accepted work; HTTP 202 is not emitted. A bounded Prefer wait either reaches completion or returns 409 operation-in-progress with Retry-After. Client timeout or disconnect does not cancel intent. Replays join the operation and inspect current state; no stale success is replayed. No Idempotency-Key header is used. Creation identity is the scoped CSI name; attachment identity is the immutable volume handle and exact node incarnation. Handles are never reassigned, including after delete and recreate under the same name.
     DELETE succeeds only with HTTP 200 and a validated outcome decided by the server after authoritative lookup. No HTTP 404, malformed identity or missing route is converted into successful deletion. Cross-cluster resources are indistinguishable from absent resources after authorization, but cluster absence is a distinct error. Resource deletion preserves dependent snapshots and clones and never implicitly detaches a mounted volume.
-    Handler errors use HTTPErrorBody. Existing authentication and path-validation middleware may return the legacy cc-api or OVD forms documented below; clients fall back to the HTTP status. The machine-readable x-csi-error-codes catalogue defines this revision's handler codes and RPC-specific mappings. Success bodies must match the requested identity, shape, read-only policy and capacity. Invalid mutation successes are retryable UNAVAILABLE with the same reconciliation identity; malformed read successes are DATA_LOSS. Unknown errors use the documented status fallback, never delete success.
+    CSI handler errors use HTTPErrorBody; this envelope is a choice of this revision and must be confirmed with the platform, because the backend's existing Kubernetes routes publish other forms: code/message (LegacyOvdError below) from their handlers and path validation, the message form (LegacyAuthError below) from authentication, shared access checks and the owner check, and no body on some 404 and 500 responses. Errors raised before the CSI handler may keep those forms; clients fall back to the HTTP status. The machine-readable x-csi-error-codes catalogue defines this revision's handler codes and RPC-specific mappings. Success bodies must match the requested identity, shape, read-only policy and capacity. Invalid mutation successes are retryable UNAVAILABLE with the same reconciliation identity; malformed read successes are DATA_LOSS. Unknown errors use the documented status fallback, never delete success.
     The driver must pin Clever-API-Version to its compiled contract date on every request. Human clients may omit it to select the newest revision. Dates are RFC 3339 UTC with up to nine fractional digits; timestamp nanoseconds must be preserved. Read operations admit the scoped driver Biscuit or organization OAuth1 through existing membership and admission checks, except capabilities and POST resolve, which are driver-only. Mutations are driver-only; this does not extend existing human write access to CSI resources.
     Request bodies are bounded by maxRequestBytes. Response pages are limited by both item count and serialized bytes, never more than 1 MiB. The proposed wait defaults of 30 seconds and maximum of 110 seconds require validation against the real HTTP frontend and all client deadlines before rollout. The client leaves transport slack inside both its HTTP and remaining gRPC deadline; it must not add slack after exceeding either budget.
 servers:
@@ -802,8 +802,12 @@ components:
       name: ownerId
       in: path
       required: true
-      description: Existing backend owner path identity, refined by the platform (including supported orga_/user_/tenant_
-        forms); do not introduce a narrower client regex.
+      description: Existing backend owner path identity. A request authenticated by the driver Biscuit spells
+        it exactly as the backend stores it on the cluster (orga_ or user_ form). The backend keys its
+        Kubernetes routes on that resolved owner, and its existing token-authenticated routes answer 400 to
+        any other spelling, tenant_ included, before verifying the token. Only requests admitted by the
+        backend's shared organization access check, which OAuth1 membership goes through, have a tenant_
+        spelling resolved to the stored owner. Do not introduce a narrower client regex.
       schema: {type: string}
     ClusterId:
       name: clusterId
@@ -893,10 +897,12 @@ components:
   responses:
     HandlerError:
       description: Handler error. Map recognized x-csi-error-codes first, including RPC overrides, then
-        fall back to HTTP status. A 404 is never DELETE success. Upstream/router errors may not contain
-        this envelope; do not reinterpret them as resource absence. HTTP 401/403 always retain their
-        authentication/authorization meaning. A recognized code with an incompatible HTTP status is
-        a protocol error (DATA_LOSS), not an RPC-specific success.
+        fall back to HTTP status. A 404 is never DELETE success. Errors raised before the CSI handler
+        (existing authentication, access and owner checks, in a legacy form or with no body) and
+        upstream/router errors may not contain this envelope; do not reinterpret them as resource
+        absence. HTTP 401/403 always retain their authentication/authorization meaning. A recognized
+        code with an incompatible HTTP status is a protocol error (DATA_LOSS), not an RPC-specific
+        success.
       headers:
         Retry-After: {$ref: '#/components/headers/RetryAfter'}
         Clever-API-Version: {$ref: '#/components/headers/ApiVersion'}
@@ -904,8 +910,8 @@ components:
         application/json:
           schema: {$ref: '#/components/schemas/HTTPErrorBody'}
     BadRequest:
-      description: 400 from the CSI handler (HTTPErrorBody) or existing path/version middleware (legacy
-        form possible). Shape incompatibility positively established by resolve uses 412 instead; unavailable
+      description: 400 from the CSI handler (HTTPErrorBody) or existing owner/path/version checks (legacy
+        forms possible). Shape incompatibility positively established by resolve uses 412 instead; unavailable
         shape is 503.
       content:
         application/json:
@@ -913,10 +919,11 @@ components:
             anyOf:
             - {$ref: '#/components/schemas/HTTPErrorBody'}
             - {$ref: '#/components/schemas/LegacyOvdError'}
+            - {$ref: '#/components/schemas/LegacyAuthError'}
     AuthError:
-      description: Existing authentication/authorization middleware may emit the cc-api form rather than
-        HTTPErrorBody. Use the HTTP status (401 UNAUTHENTICATED, 403 PERMISSION_DENIED); authorization
-        failure never depends on resource existence.
+      description: Existing authentication, shared access checks and the owner check may answer the message
+        form (LegacyAuthError) rather than HTTPErrorBody. Use the HTTP status (401 UNAUTHENTICATED, 403
+        PERMISSION_DENIED); authorization failure never depends on resource existence.
       content:
         application/json:
           schema:
@@ -1061,9 +1068,9 @@ components:
           - {$ref: '#/components/schemas/KubernetesCsiFailure'}
           - {type: 'null'}
       description: Optional embedded observation of durable work. Failure does not erase an existing snapshot
-        point-in-time. The operation id may also be carried as ErrorContext.operation; no operation route
-        is introduced in this revision. On 409 operation-in-progress, the same id is ErrorContext.name,
-        with type=operation, kind=operation and operation naming the action family.
+        point-in-time. The operation id may also be carried in an ErrorContext of type Operation; no operation
+        route is introduced in this revision. On 409 operation-in-progress, the same id is ErrorContext.name,
+        with type=Operation, kind=operation and operation naming the action family.
     KubernetesVolume:
       type: object
       required: [id, clusterId, name, status, volumeMode, fsType, capacityBytes, formatPolicy, source,
@@ -1646,7 +1653,8 @@ components:
         for details, and quote `apiRequestId` when contacting support.'
       properties:
         apiRequestId:
-          description: '`request_<uuid>` — correlates the response with the request''s traces and logs.'
+          description: '`request_<uuid>` or `request_http_<uuid>` — correlates the response with the request''s
+            traces and logs.'
           type: string
         code:
           description: Machine-matchable code, e.g. `clever.core.not-found`.
@@ -1662,16 +1670,21 @@ components:
     ErrorContext:
       description: Structured details of an error, discriminated by `type`.
       oneOf:
-      - description: No structured detail — most authz, validation and internal errors.
+      - description: No structured detail — most authentication, authorization and internal errors.
         properties:
-          type: {enum: [empty], type: string}
+          type: {enum: [Empty], type: string}
+        required: [type]
+        type: object
+      - description: 'No structured detail: the path matches no operation.'
+        properties:
+          type: {enum: [EmptyContext], type: string}
         required: [type]
         type: object
       - description: One offending field.
         properties:
           error: {$ref: '#/components/schemas/FieldError'}
           name: {type: string}
-          type: {enum: [field], type: string}
+          type: {enum: [Field], type: string}
         required: [name, error, type]
         type: object
       - description: Several offending fields, keyed by name.
@@ -1680,53 +1693,65 @@ components:
             additionalProperties: {$ref: '#/components/schemas/FieldError'}
             propertyNames: {type: string}
             type: object
-          type: {enum: [multiple_fields], type: string}
+          type: {enum: [MultipleFields], type: string}
         required: [fields, type]
         type: object
-      - description: The offending input names.
+      - description: 'One malformed query parameter: its name, and what is wrong with its value.'
         properties:
-          names:
-            items: {type: string}
-            type: array
-          type: {enum: [input], type: string}
-        required: [names, type]
-        type: object
-      - description: The offending resource, so a client can machine-match it.
-        properties:
-          kind: {type: string}
-          name: {type: string}
-          type: {enum: [resource], type: string}
-        required: [kind, name, type]
+          fieldName: {type: string}
+          fieldValue: {type: string}
+          type: {enum: [OVDErrorFieldContext], type: string}
+        required: [fieldName, fieldValue, type]
         type: object
       - description: The operation that failed, and the resource it targeted.
         properties:
           kind: {type: string}
           name: {type: [string, 'null']}
           operation: {type: string}
-          type: {enum: [operation], type: string}
-        required: [operation, kind, type]
+          type: {enum: [Operation], type: string}
+        required: [operation, kind, name, type]
+        type: object
+      - description: The offending resource, so a client can machine-match it.
+        properties:
+          kind: {type: string}
+          name: {type: string}
+          type: {enum: [Resource], type: string}
+        required: [kind, name, type]
+        type: object
+      - description: The offending input names.
+        properties:
+          names:
+            items: {type: string}
+            type: array
+          type: {enum: [Input], type: string}
+        required: [names, type]
         type: object
       - description: The path into a document that failed to select.
         properties:
           path:
             items: {type: string}
             type: array
-          type: {enum: [selector], type: string}
+          type: {enum: [Selector], type: string}
         required: [path, type]
         type: object
-      - description: An upstream answered with a status this API forwards.
+      - description: An upstream service answered with a status this API forwards.
         properties:
-          original_body: {type: string}
-          original_status: {format: int32, minimum: 0, type: integer}
-          type: {enum: [gateway_error], type: string}
-        required: [original_status, original_body, type]
+          originalBody: {type: string}
+          originalStatus: {format: int32, minimum: 0, type: integer}
+          type: {enum: [GatewayError], type: string}
+        required: [originalStatus, originalBody, type]
         type: object
     FieldError:
-      description: 'Why one field was rejected: a machine-matchable `code` and a human-readable `error`.'
+      description: 'Why one field was rejected: the offending `value`, and a `reason` (`null` when the
+        error names the field only).'
       properties:
-        code: {type: string}
-        error: {type: string}
-      required: [code, error]
+        reason:
+          description: Why it was rejected; `null` on a single-field error.
+          type: [string, 'null']
+        value:
+          description: The rejected value.
+          type: string
+      required: [value, reason]
       type: object
     LegacyAuthError:
       type: object
@@ -1735,15 +1760,17 @@ components:
         id: {type: integer}
         message: {type: string}
         type: {type: string}
-      description: Existing cc-api authentication middleware form; inspect the HTTP status, not this id
-        as a CSI code.
+      description: Existing message form answered by authentication, shared access checks and the owner
+        check (including a 400 for a malformed owner); inspect the HTTP status, not this id as a CSI code.
     LegacyOvdError:
       type: object
       required: [code, message]
       properties:
         code: {type: string}
         message: {type: string}
-      description: Existing Kubernetes path-validation form. Middleware failures use HTTP-status fallback.
+      description: Existing Kubernetes service error form, published by the backend as the default error
+        of its existing Kubernetes routes (handlers and path validation alike). Middleware failures use
+        HTTP-status fallback.
     KubernetesCsiErrorCode:
       type: string
       enum: [clever.kubernetes.invalid-request, clever.kubernetes.forbidden-parameter, clever.kubernetes.incompatible-source,
@@ -1770,50 +1797,57 @@ components:
             allOf:
             - {$ref: '#/components/schemas/ErrorContext'}
             - properties:
-                type: {enum: [empty, field, resource, operation]}
+                type: {enum: [Empty, Field, Resource, Operation]}
+                error:
+                  properties:
+                    value: {const: ''}
       x-maxSerializedBytes: 4096
       description: Public, retained failure observation. Reconstruct and sanitize every message/context
         string before exposure to organization members. The entire serialized diagnostic is at most 4096
         UTF-8 bytes, including message and context; the error message is at most 1024 UTF-8 bytes. These
         byte bounds require runtime enforcement. No credential, private hypervisor address/detail or raw
-        subprocess/upstream response is exposed. gateway_error.original_body is never copied into this
-        record. Keep only bounded public field/resource/operation references.
+        subprocess/upstream response is exposed. GatewayError.originalBody is never copied into this
+        record. Keep only bounded public field/resource/operation references; a retained Field context keeps
+        the field name, with FieldError.value always the empty string.
 x-csi-error-codes:
   clever.kubernetes.invalid-request:
     httpStatus: 400
     csiCode: INVALID_ARGUMENT
-    contextType: field
+    contextType: Field
     description: Malformed JSON, unknown fields/types/enums, invalid conditional shape or byte limits.
+      FieldError.value is the empty string, never the rejected input, for an undecodable body, an unknown
+      request field and a parameters or volumeContext entry.
   clever.kubernetes.forbidden-parameter:
     httpStatus: 400
     csiCode: INVALID_ARGUMENT
-    contextType: field
-    description: Unsupported or credential-bearing CSI metadata.
+    contextType: Field
+    description: Unsupported or credential-bearing CSI metadata. The Field context names the offending key;
+      FieldError.value is the empty string, never the rejected value.
   clever.kubernetes.incompatible-source:
     httpStatus: 400
     csiCode: INVALID_ARGUMENT
-    contextType: resource
+    contextType: Resource
     description: Requested clone/restore shape is incompatible with verified source; no copy or reformat.
   clever.kubernetes.capacity-out-of-range:
     httpStatus: 400
     csiCode: OUT_OF_RANGE
-    contextType: field
+    contextType: Field
     description: Requested/rounded/source/existing capacity cannot satisfy the supplied range or platform
       limits.
   clever.kubernetes.invalid-cursor:
     httpStatus: 400
     csiCode: ABORTED
-    contextType: empty
+    contextType: Empty
     description: Cursor is malformed, expired or bound to another cluster/filter set.
   clever.kubernetes.volume-not-found:
     httpStatus: 404
     csiCode: NOT_FOUND
-    contextType: resource
+    contextType: Resource
     description: Authoritative scoped volume absence; never emitted as a DELETE result.
   clever.kubernetes.snapshot-not-found:
     httpStatus: 404
     csiCode: NOT_FOUND
-    contextType: resource
+    contextType: Resource
     description: Authoritative scoped snapshot absence; never emitted as a DELETE result.
     rpcOverrides:
       ListSnapshots:
@@ -1823,67 +1857,67 @@ x-csi-error-codes:
   clever.kubernetes.node-not-found:
     httpStatus: 404
     csiCode: NOT_FOUND
-    contextType: resource
+    contextType: Resource
     description: Attachment creation target is unknown or confirmed destroyed.
   clever.kubernetes.attachment-not-found:
     httpStatus: 404
     csiCode: NOT_FOUND
-    contextType: resource
+    contextType: Resource
     description: GET attachment has no scoped record, regardless of whether the node incarnation is known.
   clever.kubernetes.cluster-not-found:
     httpStatus: 404
     csiCode: FAILED_PRECONDITION
-    contextType: resource
+    contextType: Resource
     description: Cluster is unknown/deleted; driver becomes unready.
   clever.kubernetes.incompatible-resource:
     httpStatus: 409
     csiCode: ALREADY_EXISTS
-    contextType: resource
+    contextType: Resource
     description: Terminal resource with the same identity has incompatible strict fields.
   clever.kubernetes.operation-in-progress:
     httpStatus: 409
     csiCode: ABORTED
-    contextType: operation
+    contextType: Operation
     description: Durable intent is still running or a conflicting operation has not reached a terminal
-      state. The existing ErrorContext operation variant carries type=operation, kind=operation, operation=the
-      action family (for example ATTACHMENT_ENSURE), and name=the durable intent id. name is mandatory
+      state. The ErrorContext Operation variant carries type=Operation, kind=operation, operation=the
+      action family (for example ATTACHMENT_ENSURE), and name=the durable intent id. name is never null
       for this code and correlates retries with the embedded operation.id; do not invent another context
       variant.
-    contextExample: {type: operation, kind: operation, operation: ATTACHMENT_ENSURE, name: kubernetes_operation_01ARZ3NDEKTSV4RRFFQ69G5FAV}
+    contextExample: {type: Operation, kind: operation, operation: ATTACHMENT_ENSURE, name: kubernetes_operation_01ARZ3NDEKTSV4RRFFQ69G5FAV}
   clever.kubernetes.volume-in-use:
     httpStatus: 409
     csiCode: FAILED_PRECONDITION
-    contextType: resource
+    contextType: Resource
     description: Volume deletion would remove an attached/pending QEMU or verified legacy resource.
   clever.kubernetes.attached-elsewhere:
     httpStatus: 409
     csiCode: FAILED_PRECONDITION
-    contextType: resource
+    contextType: Resource
     description: Another live incarnation owns the volume; no implicit detach.
   clever.kubernetes.attachment-conflict:
     httpStatus: 409
     csiCode: FAILED_PRECONDITION
-    contextType: resource
+    contextType: Resource
     description: Requested transport or attachment conflicts with authoritative ownership.
   clever.kubernetes.incarnation-unknown:
     httpStatus: 409
     csiCode: FAILED_PRECONDITION
-    contextType: resource
+    contextType: Resource
     description: Incarnation is ambiguous or its safe destruction/detachment cannot be established.
   clever.kubernetes.device-busy:
     httpStatus: 409
     csiCode: FAILED_PRECONDITION
-    contextType: resource
+    contextType: Resource
     description: Guest/device refused detachment.
   clever.kubernetes.legacy-session-present:
     httpStatus: 409
     csiCode: FAILED_PRECONDITION
-    contextType: resource
+    contextType: Resource
     description: A legacy session prevents safe expansion.
   clever.kubernetes.shape-mismatch:
     httpStatus: 412
     csiCode: FAILED_PRECONDITION
-    contextType: resource
+    contextType: Resource
     description: Positively established incompatible shape before mutation; never an unavailable/unknown
       backend state.
     rpcOverrides:
@@ -1896,48 +1930,48 @@ x-csi-error-codes:
   clever.kubernetes.node-not-attachable:
     httpStatus: 412
     csiCode: FAILED_PRECONDITION
-    contextType: resource
+    contextType: Resource
     description: Known live VM lacks the required virtio-scsi/hotplug support.
   clever.kubernetes.transport-not-allowed:
     httpStatus: 412
     csiCode: FAILED_PRECONDITION
-    contextType: resource
+    contextType: Resource
     description: The authoritative attachment route is excluded by allowedTransports. No attachment,
       adoption or ownership mutation was performed. Never replace the excluded route with a legacy no-op.
   clever.kubernetes.fencing-required:
     httpStatus: 412
     csiCode: FAILED_PRECONDITION
-    contextType: resource
+    contextType: Resource
     description: Prior ownership has not been durably fenced.
   clever.kubernetes.legacy-path-not-released:
     httpStatus: 412
     csiCode: FAILED_PRECONDITION
-    contextType: resource
+    contextType: Resource
     description: Legacy access has not been positively released before QEMU adoption.
   clever.kubernetes.attachment-limit:
     httpStatus: 412
     csiCode: RESOURCE_EXHAUSTED
-    contextType: resource
+    contextType: Resource
     description: No supported attachment slot is available.
   clever.kubernetes.storage-quota-exceeded:
     httpStatus: 412
     csiCode: RESOURCE_EXHAUSTED
-    contextType: empty
+    contextType: Empty
     description: Pool capacity or owner quota is insufficient.
   clever.kubernetes.request-too-large:
     httpStatus: 413
     csiCode: INVALID_ARGUMENT
-    contextType: empty
+    contextType: Empty
     description: Request body exceeds maxRequestBytes.
   clever.kubernetes.rate-limited:
     httpStatus: 429
     csiCode: RESOURCE_EXHAUSTED
-    contextType: empty
+    contextType: Empty
     description: Per-cluster admission/rate limit; observe Retry-After.
   clever.kubernetes.snapshot-failed:
     httpStatus: 500
     csiCode: INTERNAL
-    contextType: resource
+    contextType: Resource
     description: Retained snapshot point-in-time has a durable terminal failure; never create a replacement
       point-in-time on retry.
     rpcOverrides:
@@ -1949,23 +1983,25 @@ x-csi-error-codes:
   clever.kubernetes.unsupported-capability:
     httpStatus: 501
     csiCode: UNIMPLEMENTED
-    contextType: operation
-    description: Optional operation is not enabled by the advertised feature set.
+    contextType: Operation
+    description: Optional operation is not enabled by the advertised feature set. No durable intent exists,
+      so the Operation context carries name=null.
   clever.kubernetes.hypervisor-unreachable:
     httpStatus: 503
     csiCode: UNAVAILABLE
-    contextType: resource
+    contextType: Resource
     description: The hypervisor (QMP) cannot be contacted; no implicit fence or absence.
   clever.kubernetes.backend-unavailable:
     httpStatus: 503
     csiCode: UNAVAILABLE
-    contextType: empty
+    contextType: Empty
     description: Ceph/database/journal lookup or observation is unavailable; never report absence.
   clever.kubernetes.upstream-timeout:
     httpStatus: 504
     csiCode: DEADLINE_EXCEEDED
-    contextType: operation
+    contextType: Operation
     description: Dependency timed out before intent registration; after registration return operation-in-progress.
+      No intent is registered, so the Operation context carries name=null.
 x-csi-http-fallback:
   '400': INVALID_ARGUMENT
   '401': UNAUTHENTICATED

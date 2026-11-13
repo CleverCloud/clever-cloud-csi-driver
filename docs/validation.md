@@ -61,6 +61,38 @@ tests and `deploy/render.py --check` passed with the new
 `node.maxVolumesPerNode` value rendered in all three phases. Linux loop-device,
 sanity-container and image checks were not repeated for this follow-up.
 
+## Review follow-up on 2026-11-13
+
+The backend and hypervisor sources were compared again with the assumptions of
+this repository. The hypervisor hot-plug primitive is unchanged since the
+previous follow-up and the backend still implements none of the `clever-csi-v1`
+endpoints, so neither the driver nor the `clever-csi-v1` documents changed.
+Three points of the REST proposal were corrected. The owner path segment of a
+Biscuit-authenticated request must use the stored `orga_*` or `user_*` form: a
+backend change merged on 2026-11-02 keys its Kubernetes routes on the resolved
+owner and answers 400 to any other spelling on its existing token-authenticated
+routes. Choosing the `HTTPErrorBody` envelope for the CSI handlers is now
+recorded as a decision of the draft: on 2026-10-30 the backend published
+`{code, message}` and a message form as the error bodies of its existing
+Kubernetes routes. The same backend change gave the published `HTTPErrorBody`
+PascalCase context discriminators, `originalStatus`/`originalBody` members and
+`{value, reason}` field errors, and made the already nullable `name` of an
+operation context required. The proposal's schema copy, error catalogue and
+fixtures carried the former snake_case spelling and were aligned with the
+published form. Because a published field error carries the rejected value,
+the proposal now states when a CSI handler leaves that value empty. The
+contract test also checks that every catalogue entry names one of the four
+context types a CSI handler emits. The driver reads only the HTTP status and
+`code` of an error body, so no driver code changed. `docs/operations.md` also
+records the platform's node-image contract published on 2026-11-13 (catalog
+plugin images preloaded in every supported node image, immutable plugin
+versions; the driver image is not preloaded yet) and the hypervisor's
+RBD-support prerequisite. Both OpenAPI documents validated
+and the REST proposal passed 206/206 schema fixtures. The ordinary test run
+(107 tests), `cargo clippy --all-targets`, `helm lint`, the packaging tests and
+`deploy/render.py --check` passed unchanged. Linux loop-device,
+sanity-container and image checks were not repeated for this follow-up.
+
 ## Proposed REST contract
 
 Run `python3 -m pip install -r deploy/requirements.txt` followed by

@@ -121,7 +121,9 @@ point-in-time cut; processing readiness is a separate state.
 
 JSON uses camelCase, uppercase business enums and RFC 3339 UTC timestamps
 preserving nanoseconds. CSI maps `parameters` and `volumeContext` retain original
-keys. Shared error-context discriminators retain the backend's snake_case convention.
+keys. Error contexts follow the `HTTPErrorBody` the backend publishes:
+PascalCase `type` discriminators and camelCase members (see "Version,
+capabilities and errors").
 
 ## Idempotence, operations and deletion
 
@@ -368,9 +370,28 @@ indefinitely. Readiness remains distinct from process liveness.
 
 The complete machine-code catalogue is `x-csi-error-codes` in OpenAPI. Each
 handler code has one HTTP status, a default CSI mapping and any RPC-specific
-exception. Codes use `clever.kubernetes.*`. Handler errors follow the backend's
-`HTTPErrorBody` (`apiRequestId`, `code`, `context`, `error`). Middleware errors
-may keep existing envelopes and require status-based handling. Unknown future
+exception. Codes use `clever.kubernetes.*`. CSI handler errors use the
+`HTTPErrorBody` envelope the backend publishes (`apiRequestId`, `code`,
+`context`, `error`), which carries the structured `context` this catalogue
+relies on. The draft copies that schema as published since 2026-10-30:
+PascalCase `type` discriminators (`Empty`, `Field`, `Resource`, `Operation`,
+`GatewayError`, among others), `originalStatus`/`originalBody` on a forwarded
+upstream error, `{value, reason}` field errors and a required, nullable `name`
+on an `Operation` context. CSI handlers emit the `Empty`, `Field`, `Resource`
+and `Operation` contexts the catalogue assigns to each code. A field error's
+`value` is required by the published schema; when the rejected input is a
+`parameters` or `volumeContext` entry, an unknown request field or a request
+body that could not be decoded, a CSI handler sends the empty string there and
+does not quote that input in `reason` or `error`, because it may bear a
+credential. A failure record visible to organization members always carries an
+empty `value`. Choosing this envelope for the CSI handlers is a decision of
+this draft, not the convention of the backend's existing Kubernetes routes:
+their published contract declares `{code, message}` for handler and
+path-validation errors, a message form (`id`, `type`, `message`) when
+authentication, a shared access check or the owner check refuses the request
+(including a 400 for a malformed owner), and no body on some 404 and 500
+responses. Errors raised before the CSI handler may therefore keep those
+existing forms and require status-based handling. Unknown future
 codes never imply success. HTTP 401/403 retain their authentication/authorization
 meaning. A known code with an incompatible HTTP status is `DATA_LOSS`, not a
 negative successful validation or empty list. Do not forward human server
@@ -436,4 +457,5 @@ Release acceptance additionally requires:
 
 Confirm frontend idle/URL limits, handle inventory, authorization integration and
 rollout features with the platform team before freezing the first revision. Error
-namespace and wait limits are decisions in this draft, not deployed guarantees.
+namespace, handler error envelope and wait limits are decisions in this draft,
+not deployed guarantees.
